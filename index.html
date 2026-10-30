@@ -500,6 +500,7 @@ const knock = (at = 0, v = .3) => { nz(.07, { ft: 'lowpass', f: 700, v, at }); v
 const PENT = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
 // name -> [min gap s, play(arg)]
 const SFX = {
+  // tick + clack = the old dice sounds, unused since 2026-10-30 (roll / diceStop below), kept for review/dice/ab.js's A/B
   tick: [.05, () => vo(2300, .03, { type: 'square', v: .06 })],
   clack: [.04, () => { nz(.05, { f: 2600, q: 2, v: .22 }); vo(190, .13, { type: 'triangle', v: .32, to: 95 }); }],
   hop: [.03, n => { vo(hz(67 + PENT[n % PENT.length]), .1, { type: 'sine', v: .16, to: hz(67 + PENT[n % PENT.length]) * 1.3, sl: .06 }); nz(.03, { ft: 'highpass', f: 3000, v: .04 }); }],
@@ -551,6 +552,11 @@ const SFX = {
   // Action mode: a shove landing (squeaky toy bonk) and a dash
   bonk: [.05, () => { vo(620, .16, { type: 'square', v: .06, to: 260 }); vo(880, .12, { type: 'sine', v: .14, to: 1500, sl: .05 }); nz(.06, { f: 1800, q: 1.5, v: .12 }); }],
   dash: [.08, () => nz(.16, { f: 700, to: 2600, q: 1.2, v: .07 })],
+  // dice (2026-10-30, replaces the 2.3 kHz square tick on every face change, ~18 a second): a soft wooden rattle
+  // (sine tok + a little woody noise, random pitch from a pentatonic set, every ~0.13 s, a quarter of them skipped so it
+  // never sounds like a metronome), then a satisfying stop: a low wooden thock and a two-note chime
+  roll: [.12, () => { if (Math.random() < .25) return; const f = hz(pick([62, 64, 67, 69, 71])), v = rand(.035, .06); vo(f, .06, { type: 'sine', v, to: f * .72, sl: .05 }); nz(.03, { f: f * 2.4, q: 4, v: v * .5 }); }],
+  diceStop: [.1, () => { vo(250, .16, { type: 'sine', v: .24, to: 120 }); nz(.07, { ft: 'lowpass', f: 1100, to: 300, v: .1 }); vo(hz(84), .32, { type: 'triangle', v: .07, at: .05 }); vo(hz(91), .45, { type: 'triangle', v: .06, at: .11 }); }],
 };
 function sfx(name, arg) {
   const A = auOn(), s = SFX[name]; if (!A || !s) return;
@@ -3917,7 +3923,9 @@ function syncBoard(dt) {
       const o = BS.pups[k], [x, z, hop, fx2, fz, gy] = tokenXZ(p), me = p === cur;
       o.position.set(x, .3 + gy, z); faceDir(o, fx2, fz);
       o.scale.setScalar(me ? 1.05 : .9);
-      posePup(o, Object.assign({ hop, sq: me && B.phase === 'dice' ? Math.abs(Math.sin(NOW * 10)) * .3 : 0, wag: k }, emoOpt(k)));
+      const bk = bonkPose(k); /* dice bonk jump (Juice) wins over emotes while it runs */
+      if (bk) posePup(o, { hop: hop + bk.hop, sq: bk.sq, wag: k, act: bk.act });
+      else posePup(o, Object.assign({ hop, sq: me && B.phase === 'dice' ? Math.abs(Math.sin(NOW * 10)) * .3 : 0, wag: k }, emoOpt(k)));
     });
     // Pawpals: strays wait on their space, recruited ones trot behind their pup
     const sig = B.buddies.map(b => b.pup).join();
@@ -4019,13 +4027,14 @@ function hudBoard() {
     s.next.forEach((n, k) => { const t = SP[n], [x, y] = toScreen(t.x, t.y + .5, t.z, cam), on = B.choice.sel === k;
       ell(x, y - 30, 22, 22, on ? '#ff5c8a' : '#fff', INK, 3); if (on) ICON.draw(g, 'star', x, y - 31, 30); else ell(x, y - 30, 4, 4, INK); });
   }
-  if (cur && B.phase !== 'final' && B.order && !B.ord && !B.standings && !B.raceShow) { const [x, z, hop, , , gy] = tokenXZ(cur), [sx, sy] = toScreen(x, gy + 2.9 + hop, z, cam); turnPin(sx, sy + Math.sin(NOW * 6) * 4, cur.col); }
+  if (cur && B.phase !== 'final' && B.order && !B.ord && !B.standings && !B.raceShow) { const [x, z, hop, , , gy] = tokenXZ(cur), [sx, sy] = toScreen(x, gy + 2.9 + hop, z, cam), pa = bonkPinA(B.turn); if (pa > 0) { g.save(); g.globalAlpha = pa; turnPin(sx, sy + Math.sin(NOW * 6) * 4, cur.col); g.restore(); } }
   // stray Pawpal tags
   (B.buddies || []).forEach(b => { if (b.owner >= 0) return; const sp = SP[b.pos], [x, y, ok] = toScreen(sp.x + .55, sp.y + 1.7, sp.z + .45, cam); if (ok && y > 60 && y < 590) T(`🐶 ${b.name}`, x, y, 14, '#fff', 'center', { lw: 3 }); });
   if (B.dice && (B.phase === 'dice' || B.phase === 'diceShow') && cur) {
     const [x, z, , , , gy] = tokenXZ(cur), [sx, sy] = toScreen(x, gy + 4.2, z, cam), d = B.dice, n = d.n, ex = d.extra || [], tot = n + ex.length;
     for (let k = 0; k < n; k++) { const v = k < d.vals.length ? d.vals[k] : d.face; juDie(k, clamp(sx + (k - (tot - 1) / 2) * 70, 50, W - 50), Math.max(100, sy), v, k < d.vals.length); }
-    ex.forEach((e, j) => { const X = clamp(sx + (n + j - (tot - 1) / 2) * 70, 50, W - 50), Y = Math.max(100, sy) + 6, ps = e.v ? 1 + wob(JU.exT, 20, 6) * .35 : 1; drawDie(X, Y - (e.v ? 0 : Math.abs(Math.sin(NOW * 9 + j)) * 14), e.v || '?', .72 * ps, e.v ? 0 : Math.sin(NOW * 14 + j) * .3); T(e.ic, X + 20, Y - 22, 18, '#fff', 'center', { stroke: false }); });
+    const pend = JU.dieP.some(Boolean); /* bonus dice reveal with the bonk, not before it */
+    ex.forEach((e, j) => { const ev = pend ? 0 : e.v, X = clamp(sx + (n + j - (tot - 1) / 2) * 70, 50, W - 50), Y = Math.max(100, sy) + 6, ps = ev ? 1 + wob(JU.exT, 20, 6) * .35 : 1; drawDie(X, Y - (ev ? 0 : Math.abs(Math.sin(NOW * 9 + j)) * 14), ev || '?', .72 * ps, ev ? 0 : Math.sin(NOW * 14 + j) * .3); T(e.ic, X + 20, Y - 22, 18, '#fff', 'center', { stroke: false }); });
     // a human's roll: the button to press, pressing itself under the die
     const mine = NET.mode === 'client' ? cur.remote === NET.me : !cur.cpu && !cur.remote;
     if (B.phase === 'dice' && mine && d.vals.length < n) {
@@ -4173,7 +4182,7 @@ function hudBoardExtras() {
    juTick() runs every drawn frame and diffs a small snapshot of the state against the last frame, so the board code
    needs no hooks and online guests (who only get state) see and hear the same. Nothing here is saved in B. */
 const RMO = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-const JU = { pv: null, trauma: 0, fly: [], conf: [], dust: [], pool: [], bump: [], hurt: [], land: [], dieT: [], exT: 9, stepT: 9, hopN: 0, pips: 0, ember: [] };
+const JU = { pv: null, trauma: 0, fly: [], conf: [], dust: [], pool: [], bump: [], hurt: [], land: [], dieT: [], exT: 9, stepT: 9, hopN: 0, pips: 0, ember: [], bonk: null, dieP: [], dieJ: [] };
 const CONF_COL = ['#ff5c8a', '#ffd23f', '#3fa7ff', '#46c96b', '#a66cf0', '#ff8a1f', '#fffaf2'];
 const BN_SFX = [[/kennel upgraded/i, 'floor'], [/bought a kennel/, 'buy'], [/'s kennel!/, 'rent'], [/Dog Catcher/, 'catcher'], [/BATH|Bubble Bath|Shampoo/i, 'splash'],
   [/Mud Trap/, 'mud'], [/SQUIRREL|Zoomies|Fur Tornado|swaps places|swap places|Golden Leash/i, 'zoom'], [/FULL PAWS|party is over/i, 'fanfare'], [/FINAL FRENZY/i, 'frenzy'],
@@ -4248,11 +4257,12 @@ function juDiff(p, c) {
   }
   if (c.steps !== p.steps) JU.stepT = 0;
   if (c.bn && (c.bn !== p.bn || c.bnT < p.bnT - .01)) juBanner(c.bn);
-  if (c.phase === 'dice' && c.df !== p.df) sfx('tick');
-  if (c.dn > p.dn && c.dn > 0 && p.dn >= 0) { sfx('clack'); JU.dieT[c.dn - 1] = 0; juShake(.08); }
-  if (c.dn === 0 && p.dn !== 0) JU.dieT = [];
-  if (c.phase === 'diceShow' && p.phase !== 'diceShow') { JU.exT = 0; JU.stepT = 0; if (c.dn === p.dn) sfx('clack'); }
-  if (c.ord > p.ord && p.ord >= 0) { sfx('clack'); juShake(.05); } else if (c.ord >= 0 && c.ordF !== p.ordF) sfx('tick');
+  if (c.phase === 'dice' && c.df !== p.df) sfx('roll');
+  // a die stopped: the pup jumps and bonks it; the stop sound, pop and shake wait for the hit (bonkTick)
+  if (c.dn > p.dn && c.dn > 0 && p.dn >= 0) bonkStart(c.turn, c.dn - 1);
+  if (c.dn === 0 && p.dn !== 0) { JU.dieT = []; JU.dieP = []; JU.dieJ = []; }
+  if (c.phase === 'diceShow' && p.phase !== 'diceShow') { JU.exT = 0; JU.stepT = 0; if (c.dn === p.dn) sfx('diceStop'); }
+  if (c.ord > p.ord && p.ord >= 0) { sfx('diceStop'); juShake(.05); } else if (c.ord >= 0 && c.ordF !== p.ordF) sfx('roll');
   if (c.ws > p.ws && p.ws >= 0) { sfx('reel'); juShake(.08); } else if (c.ws >= 0 && c.wi !== p.wi) sfx('reelTick');
   if (c.fn >= 0 && p.fn < 0) sfx('raccoon');
   else if (c.fn > p.fn && p.fn >= 0) sfx('mash', c.fn);
@@ -4268,6 +4278,7 @@ function juTick() {
   const c = juSnap();
   if (JU.pv) juDiff(JU.pv, c);
   JU.pv = c;
+  bonkTick();
   JU.trauma = Math.max(0, JU.trauma - dt * 1.4);
   JU.stepT += dt; JU.exT += dt;
   JU.dieT = JU.dieT.map(t => t + dt); JU.land = JU.land.map(t => t == null ? t : t + dt);
@@ -4301,8 +4312,49 @@ function juCam() {
     rig.scale.x *= 1 + w * .7; rig.scale.z *= 1 + w * .7; rig.scale.y *= 1 - w;
   });
 }
+/* ----- Dice bonk (2026-10-30): when a die stops, the rolling pup jumps up and bonks the dice block (Mario Party style):
+   a quick wind-up, a stretched rise with one paw punched up, the hit (the die shows its number with a pop, a jolt and
+   a flash; stop sound + a small shake), a happy fall and a squashy landing. View-only (from the dn diff in juDiff, so
+   CPUs and online guests get it too); the die keeps tumbling on screen until the paw reaches it. ----- */
+const BONK = { pre: .04, up: .12, hang: .05, down: .26, land: .25, top: 1.85 }; // seconds; top = head height / pup scale
+const bonkHit = () => BONK.pre + BONK.up, bonkLand = () => bonkHit() + BONK.hang + BONK.down;
+function bonkStart(k, die) {
+  JU.bonk = { k, die, t0: NOW, hit: false, H: bonkH(k) }; JU.dieP[die] = 1;
+}
+// jump height: the pup's head (paw a little above it) reaches the bottom of the HUD die drawn over it
+function bonkH(k) {
+  const o = BS && BS.pups && BS.pups[k], p = PL[k]; if (!o || !p || !BS.cam) return 1.2;
+  const [x, z, , , , gy] = tokenXZ(p), top = .3 + gy + BONK.top * o.scale.y;
+  const [, hy] = toScreen(x, top, z, BS.cam), [, hy1] = toScreen(x, top + 1, z, BS.cam), [, dy] = toScreen(x, gy + 4.2, z, BS.cam);
+  const ppu = hy - hy1, bottom = Math.max(100, dy) + 36;
+  return ppu > 1 ? clamp((hy - bottom) / ppu, .5, 2.6) : 1.2;
+}
+// the hit: number shows, pop + jolt + flash, sound, a little shake (the extra dice reveal with the last one)
+function bonkTick() {
+  const b = JU.bonk; if (!b) return;
+  if (!b.hit && NOW - b.t0 >= bonkHit()) { b.hit = true; JU.dieP[b.die] = 0; JU.dieT[b.die] = 0; JU.dieJ[b.die] = 1; JU.exT = 0; sfx('diceStop'); juShake(.08); }
+  if (NOW - b.t0 > bonkLand() + BONK.land) JU.bonk = null;
+}
+// posePup options for pup k while it bonks (null otherwise): hop, squash / stretch, action layer
+function bonkPose(k) {
+  const b = JU.bonk; if (!b || b.k !== k) return null;
+  const t = NOW - b.t0, C = BONK, hit = bonkHit(), land = bonkLand();
+  const punch = { aX: [-3.05, -.6], aZ: [.3, 1.3], lX: [-.7, -.3], hX: -.35, ears: .6, mouth: .5, eyes: 'sq' };
+  if (t < C.pre) { const u = t / C.pre; return { hop: 0, sq: .35 * u, act: { crouch: .6 * u, aX: [.4, .4], aZ: [.5, .5], ears: -.2, eyes: 'sq' } }; }
+  if (t < hit) { const u = (t - C.pre) / C.up; return { hop: b.H * (1 - (1 - u) * (1 - u)), sq: -.35 * (1 - u * .4), act: punch }; }
+  if (t < hit + C.hang) return { hop: b.H, sq: .3 * (1 - (t - hit) / C.hang), act: Object.assign({}, punch, { mouth: .8, round: true }) };
+  if (t < land) { const u = (t - hit - C.hang) / C.down; return { hop: b.H * (1 - u * u), sq: -.12, act: { aX: [-2.5, -2.5], aZ: [1.4, 1.4], lX: [-.5, -.3], ears: .5, mouth: .6, eyes: 'h' } }; }
+  const l = (t - land) / C.land; if (l >= 1) return null;
+  return { hop: 0, sq: wob(t - land, 24, 9) * .45, act: { crouch: .6 * (1 - l), eyes: 'h', wag: true } };
+}
+// the turn pin hides while its pup is up in the air
+function bonkPinA(k) {
+  const b = JU.bonk; if (!b || b.k !== k) return 1;
+  const t = NOW - b.t0; return clamp(Math.max(1 - t / .05, (t - bonkLand()) / .15), 0, 1);
+}
 // a die that bounces and tumbles while it rolls, and pops with a spring when it stops
 function juDie(k, x, y, v, stopped, s0 = 1) {
+  if (stopped && JU.dieP[k]) { stopped = false; v = (Math.floor(NOW * 18) * 7) % DIE + 1; } // stopped, but not bonked yet
   const t = JU.dieT[k];
   if (!stopped) {
     const ph = NOW * 9 + k * 1.7, b = Math.abs(Math.sin(ph)), sq = 1 - Math.max(0, .25 - b) * .8;
@@ -4312,7 +4364,12 @@ function juDie(k, x, y, v, stopped, s0 = 1) {
   }
   const p = t == null ? 0 : wob(t, 20, 6);
   ell(x, y + 34, 26, 6, 'rgba(59,42,69,.25)');
-  drawDie(x, y, v, s0 * 1.1 * (1 + p * .35), p * .25);
+  // bonked: the block jolts up off the paw and a white-gold flash bursts under it
+  const jb = JU.dieJ[k] && t != null && t < .26, jy = jb ? Math.sin(t / .26 * Math.PI) * 24 : 0;
+  if (jb && t < .16) { const u = t / .16; g.save(); g.globalAlpha = 1 - u; g.translate(x, y + 38); g.lineCap = 'round';
+    for (let i = 0; i < 8; i++) { const a = Math.PI * (.08 + i / 7 * .84), r0 = 10 + u * 18, r1 = 24 + u * 34; g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); g.lineWidth = 3.5; g.strokeStyle = i % 2 ? '#ffd23f' : '#fff'; g.stroke(); }
+    g.restore(); }
+  drawDie(x, y - jy, v, s0 * 1.1 * (1 + p * .35), p * .25);
   if (t != null && t < .5) { g.globalAlpha = 1 - t * 2; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU, r = 40 + t * 120; T('✦', x + Math.cos(a) * r, y + Math.sin(a) * r, 18, '#ffd23f', 'center', { lw: 3 }); } g.globalAlpha = 1; }
 }
 // card transform: bump (treats arrived / bone), shake + red flash (lost something)
@@ -7077,20 +7134,22 @@ function pmPose(s, v, k, y0 = 0, extra = {}) {
   if (p.out && p.y < -.2 && v.dust !== undefined && !(v.pmSp || (v.pmSp = []))[k]) { v.pmSp[k] = 1; dustPuff(v, p.x, .1, p.z, 7, 1.6, 1.2); }
   posePup(o, Object.assign({ sq: p.lg > 0 ? -.3 : p.hit < .15 ? .45 : 0, emote: dz ? 'dizzy' : p.out && p.y < -.05 ? 'surprise' : '', et: dz ? p.hit : .3, hold: true, wag: k, sit: p.sit >= 0 }, extra, { act }));
 }
+// camera bump per bonk: started on the view's clock when a NEW hit shows up (not read from p.hit, which freezes for
+// out pups and in the show phase: a pup bonked as the cushion timer ran out shook the camera for the rest of the game)
+const PM_BUMP = { amp: .09, dur: .22 };
 function pmFx(s, v) {
-  let shake = 0;
   s.pm.forEach((p, k) => {
     const l = v.pmLast[k] || (v.pmLast[k] = { hit: p.hit, lg: p.lg, out: p.out });
-    if (p.hit < l.hit - .01) sfx('bonk');
+    if (p.hit < l.hit - .01) { sfx('bonk'); v.bumpT = NOW; }
     if (p.lg > .1 && !(l.lg > 0)) sfx('dash');
     if (p.out && !l.out && p.y > -1) sfx('splash');
-    if (p.hit < .14) shake = Math.max(shake, 1 - p.hit / .14);
     l.hit = p.hit; l.lg = p.lg; l.out = p.out;
   });
+  const bt = v.bumpT == null ? 9 : (NOW - v.bumpT) / PM_BUMP.dur, shake = bt < 1 ? Math.sin(bt * Math.PI * 3) * (1 - bt) * (1 - bt) : 0;
   // during the ready card the camera pulls back and the picture slides down under the card, so the practice run shows
   const ph = MS && MS.phase, it = ph === 'intro' ? 1 : ph === 'count' ? Math.max(0, 1 - MS.t / .8) : 0, e = it * it * (3 - 2 * it);
   if (e > .001) v.cam.setViewOffset(W, H, 0, -110 * e, W, H); else if (v.cam.view && v.cam.view.enabled) v.cam.clearViewOffset();
-  if (v.cam0) { v.cam.position.copy(v.cam0).multiplyScalar(1 + .2 * e); if (shake && !matchMedia('(prefers-reduced-motion: reduce)').matches) v.cam.position.add(new THREE.Vector3(rand(-1, 1), rand(-1, 1), 0).multiplyScalar(.14 * shake)); }
+  if (v.cam0) { v.cam.position.copy(v.cam0).multiplyScalar(1 + .2 * e); if (shake && !RMO) v.cam.position.y += PM_BUMP.amp * shake; }
 }
 function pmHud(s, v, y = 2.3) {
   s.pm.forEach(p => {
