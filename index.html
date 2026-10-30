@@ -116,6 +116,29 @@ kbd { display: inline-block; min-width: 30px; padding: 1px 8px; margin: 0 2px; f
 .tmenu .big { font-size: 30px; padding: 12px 18px; }
 .tmenu .two { display: flex; gap: 12px; } .tmenu .two .btn { flex: 1; font-size: 19px; padding: 8px 8px; }
 .tfoot { font-size: 15px; font-weight: 600; color: #fff; background: rgba(59,42,69,.72); border-radius: 99px; padding: 5px 16px; }
+/* "Sunset Honey" title theme (user's pick 2026-10-30): frosted cream-peach panel, coral gradient start button, honey
+   buttons, cocoa ink; overrides the classic looks above for the title screen only. White on coral ≥ 4.68:1, cocoa on honey 7.55:1 */
+.tscr { --ink: #5b2a2a; --sh: rgba(91,42,42,.5); --glow: rgba(255,130,70,.45); --ring: #ff8a3d; --l1: #ff6b6b; --l2: #ffc93c;
+  --panel: radial-gradient(circle at 12px 12px, rgba(255,140,90,.14) 3px, transparent 3.5px) 0 0 / 28px 28px, linear-gradient(160deg, rgba(255,249,238,.9), rgba(255,232,210,.88) 55%, rgba(255,214,200,.88));
+  --pri: linear-gradient(170deg, #d6364a, #c2410c); --gh: linear-gradient(#ffe7a6, #ffc85a); --ghh: linear-gradient(#fff0c2, #ffd47a);
+  --tag: linear-gradient(90deg, #ffd36b, #ffa76b, #ff8f8f); --foot: rgba(91,42,42,.8); }
+.tscr .tmenu { color: var(--ink); background: var(--panel); border-color: var(--ink); box-shadow: 0 10px 0 var(--sh), 0 0 0 6px rgba(255,255,255,.35), 0 22px 46px var(--glow), inset 0 2px 0 rgba(255,255,255,.9); -webkit-backdrop-filter: blur(10px) saturate(1.3); backdrop-filter: blur(10px) saturate(1.3); }
+.tscr .btn { color: var(--ink); background: var(--gh); border-color: var(--ink); box-shadow: inset 0 -5px 0 rgba(0,0,0,.08), inset 0 3px 0 rgba(255,255,255,.7), 0 5px 0 var(--ink); }
+.tscr .btn.pri { color: #fff; background: var(--pri); text-shadow: 0 2px 0 var(--sh); box-shadow: inset 0 -5px 0 rgba(0,0,0,.15), inset 0 3px 0 rgba(255,255,255,.35), 0 5px 0 var(--ink), 0 8px 22px var(--glow); }
+.tscr .btn:focus-visible { box-shadow: inset 0 -5px 0 rgba(0,0,0,.1), inset 0 3px 0 rgba(255,255,255,.5), 0 5px 0 var(--ink), 0 0 0 5px #fff, 0 0 0 9px var(--ring), 0 0 26px var(--glow); }
+.tscr .btn:active:not([disabled]) { box-shadow: inset 0 -2px 0 rgba(0,0,0,.12), 0 1px 0 var(--ink); }
+@media (hover: hover) {
+  .tscr .btn:hover:not([disabled]) { box-shadow: inset 0 -5px 0 rgba(0,0,0,.08), inset 0 3px 0 rgba(255,255,255,.7), 0 7px 0 var(--ink), 0 0 20px var(--glow); }
+  .tscr .btn.ghost:hover:not([disabled]) { background: var(--ghh); }
+  .tscr .btn:active:not([disabled]) { box-shadow: inset 0 -2px 0 rgba(0,0,0,.12), 0 1px 0 var(--ink); }
+}
+.tscr .logo { filter: drop-shadow(0 8px 0 var(--sh)) drop-shadow(0 0 22px rgba(255,255,255,.45)); }
+.tscr .logo .l1, .tscr .logo .l2 { -webkit-text-stroke-color: var(--ink); }
+.tscr .logo .l1 { color: var(--l1); } .tscr .logo .l2 { color: var(--l2); }
+.tscr .logo i { text-shadow: 0 6px 0 var(--ink); }
+.tscr .logo .tag { color: var(--ink); background: var(--tag); border-color: var(--ink); box-shadow: 0 4px 0 var(--ink), 0 6px 18px var(--glow); }
+.tscr .tpups .face { border-color: var(--ink); box-shadow: 0 4px 0 var(--sh), 0 0 0 3px rgba(255,255,255,.7); }
+.tscr .tfoot { background: var(--foot); }
 /* party setup: character-select style pup cards */
 .setup { width: 1100px; padding: 12px 24px 10px; }
 .setup h2, .play h2 { margin: 0 0 10px; text-align: center; font-size: 34px; }
@@ -1567,11 +1590,11 @@ makePup = function (id, col) {
 // ranks (mgEmote), so online guests see the same thing.
 const EMO_DUR = { cheer: 2.2, happy: 1.4, sad: 2.4, surprise: 1.2, dizzy: 2.8, wave: 1.8, taunt: 1.8, dance: 1e9 };
 function emoEnv(e, et, hold) { if (!e || !(e in EMO_DUR)) return 0; return clamp(et / .18, 0, 1) * (hold ? 1 : clamp((EMO_DUR[e] - et) / .35, 0, 1)); }
-function posePup(o, { hop = 0, sq = 0, out = false, wag = 0, sit = false, emote = '', et = 0, hold = false } = {}) {
+function posePup(o, { hop = 0, sq = 0, out = false, wag = 0, sit = false, emote = '', et = 0, hold = false, act = null } = {}) {
   const u = o.userData;
   if (!emote && u.pk != null) { const m = mgEmote(u.pk); if (m) [emote, et, hold] = m; }
   const ew = out ? 0 : emoEnv(emote, et, hold);
-  const em = { e: ew ? emote : '', t: et, w: ew, sit: !!sit && !out };
+  const em = { e: ew ? emote : '', t: et, w: ew, sit: !!sit && !out, act: out ? null : act };
   u.rig.position.y = hop + (out ? .4 : 0); // lying on its side: lift so the body rests on the ground, not in it
   u.rig.scale.set(1 + sq * .14, 1 - sq * .22, 1 + sq * .14);
   u.rig.rotation.set(0, 0, out ? Math.PI / 2 : 0);
@@ -1635,6 +1658,9 @@ function animPup(o, u, hop, sq, out, wag, em) {
     u.legs.forEach(l => { const sx = l.userData.sx; l.rotation.x = lrp(l.rotation.x, -1.42, st); l.rotation.z = lrp(l.rotation.z, sx * .2, st); });
     u.arms.forEach(m => { const sx = m.userData.sx; m.rotation.x = lrp(m.rotation.x, -.6, st); m.rotation.z = lrp(m.rotation.z, sx * .22, st); });
   }
+  // minigame action layer (pull, throw, crouch, bark, ...; see "Minigame animation")
+  const P = em.act; u.head.scale.setScalar(1);
+  if (P) actPrim(u, P);
   // emote layer (fades out while walking)
   const e = em.e, ew = em.w * (1 - w * .75), et = em.t, sd = a.seed;
   let eyes = blink > .5 ? 'o' : 'o', mo = 0, tongue = false, esc = 1;
@@ -1700,12 +1726,15 @@ function animPup(o, u, hop, sq, out, wag, em) {
   }
   // face: eyes open / ^ ^ / X X, mouth open by mo (round for surprise), tongue
   const F = u.face; if (!F) return;
-  if (ew < .3 || out) { eyes = 'o'; mo = 0; tongue = false; esc = 1; }
+  let round = e === 'surprise';
+  if (ew < .3 && P && !out) { const pw = P.w == null ? 1 : P.w; eyes = pw > .3 && P.eyes && P.eyes !== 'sq' ? P.eyes : 'o'; mo = (P.mouth || 0) * pw; tongue = !!P.tongue; round = !!P.round; esc = 1;
+    if (P.eyes === 'sq') u.eyes.forEach(g => { g.scale.y *= 1 - .8 * pw; }); }
+  else if (ew < .3 || out) { eyes = 'o'; mo = 0; tongue = false; esc = 1; }
   u.eyes.forEach(g => { g.visible = eyes === 'o'; if (esc !== 1) g.scale.set(esc, g.scale.y * esc, 1); });
   F.happy.forEach(g => { g.visible = eyes === 'h'; });
   F.x.forEach(g => { g.visible = eyes === 'x'; });
   F.mouth.visible = mo > .05;
-  if (mo > .05) { F.mouth.scale.set(e === 'surprise' ? .75 : 1, .35 + mo * .75, 1); F.tongue.visible = tongue || e !== 'surprise'; F.tongue.position.y = tongue ? -.07 : -.035; F.tongue.scale.y = tongue ? .06 : .035; }
+  if (mo > .05) { F.mouth.scale.set(round ? .75 : 1, .35 + mo * .75, 1); F.tongue.visible = tongue || e !== 'surprise'; F.tongue.position.y = tongue ? -.07 : -.035; F.tongue.scale.y = tongue ? .06 : .035; }
 }
 // rotate a bone of Schiffy's model by ang about an axis given in the model's own space (x = her left, y = up, z = forward)
 const QA = new THREE.Quaternion(), QB = new THREE.Quaternion(), QC = new THREE.Quaternion(), QM = new THREE.Quaternion(), VA = new THREE.Vector3();
@@ -1752,6 +1781,7 @@ function dogPose(o, u, d, hop, out, em) {
     R('th_l', 1, 0, 0, -1.45 * st); R('th_r', 1, 0, 0, -1.45 * st); R('sp1', 1, 0, 0, -.1 * st);
     arms(-.15 * st, -.15 * st);
   }
+  if (em.act) actDog(u, d, em.act, em.w < .3);
   const e = em.e, ew = em.w * (1 - d.runW * .75), et = em.t;
   if (e === 'cheer') {
     const ph = NOW * 9;
@@ -1813,6 +1843,118 @@ function faceDir(o, dx, dz) {
     v = clamp(v + (dd * w * w - 2 * w * v) * h, -14, 14); cur += v * h;
   }
   o.rotation.y = u.fy = cur; u.fv = v;
+}
+
+/* ===== Minigame animation (2026-10-30, branch pawty-anim): an action layer every minigame view can hand posePup as
+   `act` (view-only, built from state each frame, so online guests pose the same). Both pup kinds read it: the joint
+   groups of the primitive / Blender pups (actPrim) and Schiffy's bones (actDog), on top of walk / idle / sit and under
+   the emotes. Fields (all optional, angles in radians): w = weight 0-1, lean (+ forward, - back, about the feet), roll,
+   bob, crouch 0-1, twist (hips yaw), hipX (bend at the waist), aX [right, left] arm pitch (0 hanging, -1.57 forward,
+   -3 straight up, + back), aZ [right, left] arm spread (.4 rest, 1.6 out to the side, 2.7 up), lX [right, left] leg
+   pitch (- forward), hX head pitch (+ down), hY head yaw (+ to the pup's left), hZ head roll, ears (+ perk / spread),
+   puff (cheeks), wag (fast tail); face (only when no emote shows): mouth 0-1, round, tongue, eyes 'o' | 'h' | 'x' | 'sq'
+   (squeezed). Helpers: lookAct (head toward a point), mgRe / reOpt (short reaction emotes kept in the view), mgMem
+   (per-pup view memory for landings / presses), mgDust / dustPuff / dustTick (one instanced mesh of dust or splash
+   puffs per view, own RNG so seeded captures and game randomness stay in step). ===== */
+function actPrim(u, P) {
+  const w = P.w == null ? 1 : P.w; if (w <= 0) return;
+  const c = (P.crouch || 0) * w;
+  if (P.lean) u.rig.rotation.x += P.lean * w;
+  if (P.roll) u.rig.rotation.z += P.roll * w;
+  if (P.bob) u.rig.position.y += P.bob * w;
+  if (c) { u.rig.position.y -= .1 * c; u.hips.position.y -= .03 * c; u.rig.scale.y *= 1 - .08 * c; u.hips.rotation.x += .15 * c; }
+  if (P.twist) u.hips.rotation.y += P.twist * w;
+  if (P.hipX) u.hips.rotation.x += P.hipX * w;
+  u.arms.forEach((m, i) => { if (P.aX) m.rotation.x = lrp(m.rotation.x, P.aX[i], w); if (P.aZ) m.rotation.z = lrp(m.rotation.z, m.userData.sx * P.aZ[i], w); });
+  u.legs.forEach((l, i) => { if (P.lX) l.rotation.x = lrp(l.rotation.x, P.lX[i], w); if (c) l.rotation.z += l.userData.sx * .28 * c; });
+  if (P.hX) u.head.rotation.x += P.hX * w;
+  if (P.hY) u.head.rotation.y += P.hY * w;
+  if (P.hZ) u.head.rotation.z += P.hZ * w;
+  if (P.ears) u.ears.forEach(g => { g.rotation.z += g.userData.sx * P.ears * w * (g.userData.flop ? .8 : .45); });
+  if (P.puff) u.head.scale.set(1 + .1 * P.puff * w, 1 - .02 * P.puff * w, 1 + .08 * P.puff * w);
+  if (P.wag) u.tail.rotation.y = Math.sin(NOW * 26) * .6;
+}
+const DOG_AX = 1; /* Schiffy's upper-arm pitch: same sign as the joint groups (checked on the pose sheet) */
+function actDog(u, d, P, face) {
+  const w = P.w == null ? 1 : P.w; if (w <= 0) return;
+  const R = (n, x, y, z, a) => boneRot(d, d.bones[n], x, y, z, a), side = (b, sx) => b + (sx * d.lx > 0 ? '_l' : '_r');
+  const c = (P.crouch || 0) * w;
+  if (P.lean) u.rig.rotation.x += P.lean * w;
+  if (P.roll) u.rig.rotation.z += P.roll * w;
+  if (P.bob) u.rig.position.y += P.bob * w;
+  if (c) { u.rig.position.y -= d.hip * .28 * c; for (const sx of [-1, 1]) { R(side('th', sx), 1, 0, 0, -.75 * c); R(side('ca', sx), 1, 0, 0, 1.2 * c); } }
+  if (P.twist) R('sp1', 0, 1, 0, P.twist * w);
+  if (P.hipX) R('sp2', 1, 0, 0, P.hipX * w * .5); /* her spine chain bends more than the joint groups: half */
+  [-1, 1].forEach((sx, i) => {
+    const ua = side('ua', sx);
+    if (P.aZ) R(ua, 0, 0, 1, sx * (P.aZ[i] - .4) * .8 * w);
+    if (P.aX) R(ua, 1, 0, 0, P.aX[i] * w * DOG_AX);
+    if (P.lX) R(side('th', sx), 1, 0, 0, P.lX[i] * w);
+  });
+  if (P.hX) R('head', 1, 0, 0, P.hX * w * .6); /* the big head reads a pitch more strongly */
+  if (P.hY) R('head', 0, 1, 0, P.hY * w);
+  if (P.hZ) R('head', 0, 0, 1, P.hZ * w);
+  if (P.ears) { R('ear_l', 0, 0, 1, d.lx * P.ears * .5 * w); R('ear_r', 0, 0, 1, -d.lx * P.ears * .5 * w); }
+  if (P.wag) R('tail', 0, 1, 0, Math.sin(NOW * 26) * .5 * w);
+  if (!face) return;
+  if (P.mouth) R('jaw', 1, 0, 0, .5 * P.mouth * w);
+  if (P.eyes === 'sq' || P.eyes === 'h' || P.eyes === 'x') for (const n of ['eye_l', 'eye_r']) if (d.bones[n]) d.bones[n].scale.y *= 1 - .6 * w;
+}
+// head yaw / pitch that turn a pup's head toward world point (x, y, z); k scales it
+function lookAct(o, x, y, z, k = 1) {
+  const dx = x - o.position.x, dz = z - o.position.z, d = Math.hypot(dx, dz) || 1e-3;
+  const yaw = wrapA(Math.atan2(dx, dz) - o.rotation.y), hy = o.position.y + 1.2 * o.scale.y;
+  return { hY: clamp(yaw, -1.1, 1.1) * .75 * k, hX: clamp(-Math.atan2(y - hy, d), -.55, .45) * .8 * k };
+}
+// short reaction emotes, kept in the view (set from state changes, so guests get them too); the finish emotes win
+function mgRe(v, k, e) { (v.re || (v.re = []))[k] = { e, t: NOW }; }
+function reOpt(v, k) { if (mgEmote(k)) return {}; const r = v.re && v.re[k]; return r && NOW - r.t < EMO_DUR[r.e] ? { emote: r.e, et: NOW - r.t } : {}; }
+function mgMem(v, k) { const a = v.am || (v.am = []); return a[k] || (a[k] = { t: -9, z: 0, n: undefined, land: -9, p: -9 }); } /* n undefined: a guest joining mid-game must not react to old counts */
+// a jump from height z (any units > 0 = airborne): pre = 0-1 wind-up crouch while waiting on the ground, landing squash
+// for .2 s; returns posePup's sq + act (merge more fields into .act)
+function hopAct(v, k, z, pre = 0) {
+  const m = mgMem(v, k);
+  if (m.z > .001 && z <= .001) m.land = NOW;
+  m.z = z;
+  const l = clamp(1 - (NOW - m.land) / .2, 0, 1), air = z > .001;
+  return { sq: air ? -.22 : l * .4 - pre * .12, act: { crouch: air ? 0 : Math.max(pre * .85, l * .7), lX: air ? [-.7, -.4] : undefined, ears: air ? .5 : pre * .3, eyes: pre > .6 && !air ? 'sq' : 'o', mouth: air ? .35 : 0 } };
+}
+// shared pose from a PupMover (Action games): run lean, shove lunge, flinch when bonked, flailing when falling
+function pmAct(p) {
+  const sp = Math.hypot(p.vx || 0, p.vz || 0);
+  if (p.out && p.y < -.05) return { aX: [-2.6 + Math.sin(NOW * 22) * .6, -2.6 - Math.sin(NOW * 22) * .6], aZ: [1.2, 1.2], lX: [Math.sin(NOW * 18) * .7, -Math.sin(NOW * 18) * .7], mouth: 1, round: true };
+  if (p.lg > 0) return { lean: .42, aX: [-1.65, -1.65], aZ: [.2, .2], lX: [.55, -.6], hX: -.25, mouth: .7, eyes: 'sq', ears: -.4 };
+  const fl = p.hit != null && p.hit < .25 ? 1 - p.hit / .25 : 0;
+  return { lean: clamp(sp * .05, 0, .28) - fl * .35, aZ: fl ? [1.5, 1.5] : undefined, w: 1 };
+}
+// one instanced mesh of puffs per view (dust, mud, splashes); spawn with dustPuff, step with dustTick (from sync)
+let VRS = 12345;
+const vR = () => { VRS = (VRS * 16807) % 2147483647; return VRS / 2147483647; };
+function mgDust(v, col = '#efe2c4', n = 48) {
+  const m = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.5, 1), new THREE.MeshToonMaterial({ color: col, gradientMap: GRAD }), n);
+  m.userData.noInk = true; m.castShadow = false; m.frustumCulled = false;
+  const z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < n; i++) m.setMatrixAt(i, z);
+  v.scene.add(m); v.dust = { m, p: Array.from({ length: n }, () => ({ t: 9, life: 1 })), i: 0, t: NOW, mx: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(), o: new THREE.Vector3() };
+  return v.dust;
+}
+function dustPuff(v, x, y, z, n = 3, sp = 1, sz = 1) {
+  const D = v.dust || mgDust(v);
+  for (let j = 0; j < n; j++) {
+    const p = D.p[D.i]; D.i = (D.i + 1) % D.p.length;
+    const a = vR() * TAU, r = (.4 + vR() * .8) * sp;
+    Object.assign(p, { x: x + (vR() - .5) * .3, y, z: z + (vR() - .5) * .3, vx: Math.cos(a) * r, vy: (.7 + vR() * .9) * sp, vz: Math.sin(a) * r, t: 0, life: .45 + vR() * .4, s: (.16 + vR() * .14) * sz });
+  }
+}
+function dustTick(v) {
+  const D = v.dust; if (!D) return;
+  const dt = clamp(NOW - D.t, 0, .1); D.t = NOW;
+  D.p.forEach((p, i) => {
+    if (p.t >= p.life) { if (p.t < 9) { p.t = 9; D.mx.makeScale(0, 0, 0); D.m.setMatrixAt(i, D.mx); } return; }
+    p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 2.2 * dt; const f = Math.exp(-3 * dt); p.vx *= f; p.vz *= f;
+    const u = p.t / p.life, s = p.t >= p.life ? 0 : p.s * (1 + u * 1.6) * (1 - u * u);
+    D.mx.compose(D.o.set(p.x, Math.max(.05, p.y), p.z), D.q, D.s.set(s, s * .8, s)); D.m.setMatrixAt(i, D.mx);
+  });
+  D.m.instanceMatrix.needsUpdate = true;
 }
 
 /* ===== Board: Monopoly-style square island (40 spaces, 4 corner landmarks)
@@ -4533,11 +4675,22 @@ MGDEF.sit = {
     const go = s.ph === 'go' || (s.ph === 'show' && s.order.length);
     v.arm.rotation.z = lerp(v.arm.rotation.z, go ? 2.6 : .25 + Math.sin(NOW * 3) * .1, .25);
     v.mouth.scale.set(.12, go ? .12 : .04, .04);
-    const n = s.n, sp = Math.min(2.6, 13 / n);
+    // waiting = ears up, crouched and quivering, eyes on the owner; a fake-out = a flinch; pressed too early = sheepish
+    // droop; SIT! = plop down (the fastest cheers)
+    const n = s.n, sp = Math.min(2.6, 13 / n), fake = s.ph === 'wait' && s.fakeAt > 0 && s.t > s.fakeAt && s.t < s.fakeAt + .5;
     v.pups.forEach((o, k) => {
-      o.position.set((k - (n - 1) / 2) * sp, 0, 2.2); o.rotation.y = 0; o.scale.setScalar(1.25);
-      posePup(o, { sit: s.order.includes(k), sq: s.order.includes(k) ? .1 : Math.sin(NOW * 8 + k) * .05, out: false, wag: k });
-      o.rotation.x = s.locked[k] ? -.25 : 0;
+      o.position.set((k - (n - 1) / 2) * sp, 0, 2.2); o.scale.setScalar(1.25); faceDir(o, -o.position.x * .08, 1);
+      const sat = s.order.includes(k), m = mgMem(v, k);
+      if (s.locked[k] && !m.lk) { m.lk = 1; mgRe(v, k, 'surprise'); m.lt = NOW; }
+      if (!s.locked[k]) m.lk = 0;
+      if (sat && !m.st) { m.st = 1; if (s.order[0] === k) mgRe(v, k, 'cheer'); }
+      if (!sat) m.st = 0;
+      const re = reOpt(v, k), look = lookAct(o, 0, 4.2, -2.2, .35);
+      let act, emote = re.emote, et = re.et, hold = false;
+      if (s.locked[k] && !sat) { if (!emote) { emote = 'sad'; et = NOW - m.lt; hold = true; } act = { hX: .2, ears: -.4 }; }
+      else if (sat) act = { ears: .3, wag: true, hX: look.hX, hY: look.hY };
+      else act = { crouch: .3 + (fake ? .4 : 0), bob: Math.sin(NOW * 31 + k) * .012, ears: .7, hX: look.hX - .1, hY: look.hY, eyes: fake ? 'sq' : 'o', wag: true, aX: [-.5, -.5], aZ: [.25, .25] };
+      posePup(o, { sit: sat, sq: fake && !s.locked[k] ? .25 : 0, wag: k, emote, et, hold, act });
     });
   },
   hud(s, v) {
@@ -4630,12 +4783,21 @@ MGDEF.hose = {
     v.noz.material = mat(s.warn && Math.floor(NOW * 10) % 2 ? '#ff5c5c' : '#3fa34d');
     v.mist.forEach((m, i) => { const bi = i % 2, on = bi === 0 || s.two, a = s.ang + bi * Math.PI + (hash01(i) - .5) * .3, u = (NOW * 1.7 + i / 3) % 1, r = 9.4 + u * 1.2;
       m.visible = on; m.position.set(Math.cos(a) * r, .3 + Math.sin(u * Math.PI) * .9, Math.sin(a) * r); m.scale.setScalar(.15 + u * .25); });
+    // pups watch the spray come round (head follows it), crouch as it nears, leap with tucked legs, squash on landing;
+    // a soaked pup makes the others flinch
+    const soaked = s.pups.filter(p => p.out).length; if (v.soak == null) v.soak = soaked;
     s.pups.forEach((p, k) => {
       const o = v.pups[k], r = this.R * (1 + p.ot * .4);
       o.position.set(Math.cos(p.a) * r, 0, Math.sin(p.a) * r);
       faceDir(o, -Math.cos(p.a), -Math.sin(p.a));
-      posePup(o, { hop: p.z / 90, sq: p.z ? -.3 : 0, out: p.out, wag: k });
+      if (soaked > v.soak && !p.out) mgRe(v, k, 'surprise');
+      let eta = 9; for (const off of this.beams(s)) { let d = wrapA(p.a - s.ang - off) * s.dir; if (d < 0) d += TAU; eta = Math.min(eta, d / s.spd); }
+      const near = this.beams(s).map(off => { const a = s.ang + off; return [Math.cos(a) * 4, Math.sin(a) * 4]; }).sort((a, b) => Math.hypot(a[0] - o.position.x, a[1] - o.position.z) - Math.hypot(b[0] - o.position.x, b[1] - o.position.z))[0];
+      const h = hopAct(v, k, p.z, p.out ? 0 : clamp(1 - eta / .6, 0, 1)), lk = lookAct(o, near[0], .4, near[1], .8);
+      Object.assign(h.act, { hY: lk.hY, hX: lk.hX });
+      posePup(o, Object.assign({ hop: p.z / 90, sq: h.sq, out: p.out, wag: k, act: h.act }, reOpt(v, k)));
     });
+    v.soak = soaked;
   },
   hud(s, v) {
     s.pups.forEach((p, k) => { const r = this.R * (1 + p.ot * .4), [x, y] = toScreen(Math.cos(p.a) * r, 0, Math.sin(p.a) * r, v.cam); tag(s.ps[k], x, y + 18, p.out ? 'SOAKED!' : null, p.out ? '#7fd0ff' : '#fff'); });
@@ -4724,11 +4886,22 @@ MGDEF.dash = {
     v.owner.rotation.y = lerp(v.owner.rotation.y, s.light === 'red' ? -Math.PI / 2 : Math.PI / 2, .2);
     v.owner.head.rotation.y = s.light === 'yellow' ? Math.sin(NOW * 14) * .3 : 0;
     crowdBob(v.crowd, .14, s.light === 'red' ? .2 : 1); crowdBob(v.crowd2, .14, s.light === 'red' ? .2 : 1);
+    // running = leaning sprint with dust at speed; red light = frozen mid-stride, wobbling to keep balance; caught =
+    // dizzy; past the line = turn to the crowd and cheer
     v.pups.forEach((o, k) => {
-      const run = s.v[k] > 20;
-      o.position.set(PX(s.x[k]), 0, this.laneZ(s, k)); o.rotation.y = Math.PI / 2;
-      posePup(o, { hop: run ? Math.abs(Math.sin(s.x[k] / 18)) * .35 : 0, sq: run ? Math.sin(s.x[k] / 9) * .15 : 0, wag: k });
+      const run = s.v[k] > 20, fin = s.finT[k] < Infinity, m = mgMem(v, k), z = this.laneZ(s, k);
+      o.position.set(PX(s.x[k]), 0, z);
+      if (fin) faceDir(o, -.3, 1); else faceDir(o, 1, 0);
+      if (s.stun[k] > .85 && !m.cg) { m.cg = 1; mgRe(v, k, 'dizzy'); dustPuff(v, o.position.x, .05, z, 4, 1); }
+      if (!s.stun[k]) m.cg = 0;
+      if (fin && !m.fin) { m.fin = 1; mgRe(v, k, 'cheer'); }
+      if (run && s.v[k] > 230 && NOW - m.t > .14) { m.t = NOW; dustPuff(v, o.position.x - .4, .05, z, 1, .5); }
+      const spd = clamp(s.v[k] / 400, 0, 1), frz = s.light === 'red' && !fin && !s.stun[k];
+      const act = frz ? { lean: .18, roll: Math.sin(NOW * 7 + k) * .07, lX: [-.85, .55], aX: [.9, -1.1], aZ: [.7, .7], eyes: 'sq', mouth: .25, round: true, hX: -.1 }
+        : fin ? null : { lean: .08 + .22 * spd, hX: -.12 * spd, ears: -.4 * spd, mouth: .4 * spd, tongue: spd > .6 };
+      posePup(o, Object.assign({ hop: run && !frz ? Math.abs(Math.sin(s.x[k] / 18)) * .12 : 0, wag: k, act }, reOpt(v, k)));
     });
+    dustTick(v);
   },
   hud(s, v) {
     // traffic light + race progress strip
@@ -4815,11 +4988,19 @@ MGDEF.fetch = {
       const z = this.laneZ(s, k), l = s.lock[k];
       v.flags[k].position.x = this.X(s.D);
       v.marks[k].visible = s.ph === 'aim' && l == null; v.marks[k].position.x = this.X(m);
-      const b = v.balls[k];
-      b.visible = l != null && l >= 0;
-      if (b.visible) { const u = Math.min(1, s.ft[k] / .9); b.position.set(lerp(PX(this.x0 - 40), this.X(l), u), .3 + Math.sin(u * Math.PI) * 3.5, z); }
-      const o = v.pups[k]; o.position.set(PX(this.x0 - 90), 0, z); o.rotation.y = Math.PI / 2;
-      posePup(o, { sq: l != null && s.ft[k] < .3 ? -.35 : 0, wag: k });
+      // aiming = ball cocked behind the head, swaying with the marker; press = a whip throw (lean, twist, follow-
+      // through) and the ball leaves the paw; then eyes on the ball; the score shows = cheer / droop
+      const b = v.balls[k], o = v.pups[k], px = PX(this.x0 - 90), ft = s.ft[k], thr = l != null && l >= 0, mm = mgMem(v, k);
+      o.position.set(px, 0, z); faceDir(o, 1, 0);
+      b.visible = s.ph === 'aim' && l == null || thr && (s.ph === 'aim' || s.pts[k] != null);
+      const hx = px + .3, hy = 1.45, u = thr ? Math.min(1, ft / .9) : 0;
+      if (b.visible) b.position.set(thr ? lerp(hx, this.X(l), u) : px - .32, thr ? hy + (.3 - hy) * u + Math.sin(u * Math.PI) * 3.5 : 1.35 + Math.sin(NOW * 3 + k) * .04, thr ? z : z - .3);
+      const key = s.th + ':' + s.ph; if (s.ph === 'show' && mm.sh !== key) { mm.sh = key; const pt = s.pts[k]; mgRe(v, k, pt >= 90 ? 'cheer' : pt < 35 ? 'sad' : 'happy'); }
+      let act;
+      if (l == null && s.ph === 'aim') act = { lean: -.08, twist: -.35, aX: [-.3, 1.9 + Math.sin(NOW * 4 + k) * .12], aZ: [.6, 1.1], hX: -.05, eyes: 'sq', crouch: .2 };
+      else if (thr && ft < .55) { const e = clamp(ft / .12, 0, 1); act = { lean: .3 * e, twist: lerp(-.35, .45, e), aX: [-.5, lerp(1.9, -1.9, e) + (ft > .12 ? (ft - .12) * 2 : 0)], aZ: [.6, .4], lX: [-.5 * e, .3 * e], mouth: .6, eyes: 'o' }; }
+      else if (b.visible) { const lk = lookAct(o, b.position.x, b.position.y, z); act = { hX: lk.hX, hY: lk.hY, ears: .4, wag: true }; }
+      posePup(o, Object.assign({ wag: k, act }, reOpt(v, k)));
     });
   },
   hud(s, v) {
@@ -4895,10 +5076,26 @@ MGDEF.potato = {
     return v;
   },
   sync(s, v) {
+    // the holder holds the toy up over its head, shaking more as it heats up, and chomps on every press; a pass = a
+    // toss (thrower) and an arms-up catch (receiver); everyone else watches the toy and gets jumpier; POP = shock
+    const heat0 = s.ph === 'boom' ? 1 : s.ft / s.fuse;
     s.ps.forEach((p, k) => {
-      const [x, z] = this.pxz(s, k), o = v.pups[k], boom = s.ph === 'boom' && s.holder === k;
+      const [x, z] = this.pxz(s, k), o = v.pups[k], boom = s.ph === 'boom' && s.holder === k, m = mgMem(v, k);
       o.position.set(x, .06, z); faceDir(o, -x, -z);
-      posePup(o, { out: s.out[k] && !boom, sq: boom ? .6 : s.holder === k && !s.fly ? Math.sin(NOW * 20) * .12 : 0, wag: k });
+      if (s.holder === k && s.chew !== m.n) { if (s.chew > m.n) m.bt = NOW; m.n = s.chew; }
+      if (s.fly && s.fly.to === k && !m.cat) { m.cat = 1; }
+      if (!s.fly) m.cat = 0;
+      if (s.ph === 'boom' && !m.bm) { m.bm = 1; if (!boom && !s.out[k]) mgRe(v, k, 'surprise'); }
+      if (s.ph !== 'boom') m.bm = 0;
+      const hold = s.holder === k && !s.fly && s.ph === 'play', bite = clamp(1 - (NOW - (m.bt || -9)) / .16, 0, 1);
+      let act = null, emote, et;
+      if (boom) { emote = 'surprise'; et = s.bt; act = { aX: [-2.9, -2.9], aZ: [1.6, 1.6] }; }
+      else if (hold) { const sh = Math.sin(NOW * (14 + heat0 * 30)) * (.03 + heat0 * .1); act = { aX: [-2.85 + sh, -2.85 - sh], aZ: [.45, .45], hX: -.3 + bite * .35, mouth: .3 + bite * .7, eyes: heat0 > .7 ? 'sq' : 'o', roll: sh * .4, crouch: bite * .3 }; }
+      else if (s.fly && s.fly.from === k) { const u = s.fly.u; act = { aX: [lerp(-2.8, -1.4, u), lerp(-2.8, -1.4, u)], aZ: [.5, .5], lean: .2 * (1 - u), mouth: .5 }; }
+      else if (s.fly && s.fly.to === k) act = { aX: [-2.6, -2.6], aZ: [.7, .7], mouth: .8, round: true, crouch: .2 };
+      else if (!s.out[k]) { const tp = v.duck.position, lk = lookAct(o, tp.x, tp.y, tp.z); act = { hX: lk.hX, hY: lk.hY, crouch: .15 + heat0 * .3, bob: Math.sin(NOW * 30 + k) * .01 * heat0, ears: .4, aX: [-.6, -.6], aZ: [.3, .3] }; }
+      const re = reOpt(v, k);
+      posePup(o, { out: s.out[k] && !boom, sq: boom ? .3 : 0, wag: k, act, emote: emote || re.emote, et: emote ? et : re.et });
     });
     let tx, tz, ty;
     if (s.fly) { const [ax, az] = this.pxz(s, s.fly.from), [bx, bz] = this.pxz(s, s.fly.to); tx = lerp(ax, bx, s.fly.u); tz = lerp(az, bz, s.fly.u); ty = 2.6 + Math.sin(s.fly.u * Math.PI) * 2; }
@@ -5014,9 +5211,21 @@ MGDEF.rain = {
       seen.add(key);
     }));
     for (const [key, m] of v.items) if (!seen.has(key)) { v.scene.remove(m); v.items.delete(key); }
+    // pups run the way they go (a turn = an eased spin round), eyes up on the nearest treat with the mouth open as it
+    // drops in; a catch = a happy chomp, a sponge = dizzy spin
     v.pups.forEach((o, k) => {
-      o.position.set(this.RX(s.x[k]), 0, 0); o.rotation.y = s.stun[k] > 0 ? NOW * 12 : s.dir[k] * .7;
-      posePup(o, { hop: Math.abs(Math.sin(NOW * 10 + k)) * .12, wag: k });
+      const m = mgMem(v, k);
+      o.position.set(this.RX(s.x[k]), 0, 0);
+      if (s.stun[k] > 0) { o.rotation.y = NOW * 12; o.userData.ft = null; } else faceDir(o, s.dir[k], .45);
+      if (m.n != null && s.sc[k] > m.n && !(s.stun[k] > 0)) mgRe(v, k, 'happy');
+      if (s.stun[k] > .7 && !m.sp) { m.sp = 1; mgRe(v, k, 'dizzy'); }
+      if (!(s.stun[k] > 0)) m.sp = 0;
+      m.n = s.sc[k];
+      let near = null, nd = 1e9;
+      for (const it of s.it[k]) { if (it.gone || it.type === 'sponge' || it.y > this.py - 30) continue; const d = Math.abs(s.cw * k + it.rx * s.cw - s.x[k]) + (this.py - it.y) * .4; if (d < nd) { nd = d; near = it; } }
+      let act = { lean: .12 };
+      if (near) { const lk = lookAct(o, this.RX(s.cw * k + near.rx * s.cw), this.RY(near.y), 0); const cl = clamp((near.y - (this.py - 260)) / 200, 0, 1); act = { lean: .12, hX: lk.hX, hY: lk.hY, mouth: cl * .9, round: cl > .5, ears: .3 }; }
+      posePup(o, Object.assign({ wag: k, act }, reOpt(v, k)));
     });
   },
   hud(s, v) {
@@ -5099,15 +5308,32 @@ MGDEF.cushion = {
   sync(s, v) {
     v.box.scale.setScalar(s.ph === 'music' ? 1 + Math.abs(Math.sin(NOW * 8)) * .08 : 1);
     v.cush.forEach((c, i) => { c.visible = i < s.cush; if (c.visible) { const a = this.cushAng(s, i); c.position.set(Math.cos(a) * this.CR, .18, Math.sin(a) * this.CR); } });
+    // music = a bouncy dance-trot (arms swinging to the beat); STOP = a scramble toward the nearest cushion; a dive
+    // onto one = squash + happy; tripped = flat on the floor with dust; out = sulking on the bench
     let outN = 0;
     s.ps.forEach((p, k) => {
-      const o = v.pups[k];
-      if (s.out[k]) { o.position.set(7.4 + (outN % 2) * 1.4, 0, -1 + Math.floor(outN / 2) * 1.5); outN++; faceDir(o, -1, 1); posePup(o, { sq: .3, wag: k }); return; }
-      if (s.sat[k] >= 0) { const a = this.cushAng(s, s.sat[k]); o.position.set(Math.cos(a) * this.CR, .35, Math.sin(a) * this.CR); faceDir(o, Math.cos(a), Math.sin(a)); posePup(o, { sit: true, wag: k }); return; }
+      const o = v.pups[k], m = mgMem(v, k);
+      if (s.out[k]) { o.position.set(7.4 + (outN % 2) * 1.4, 0, -1 + Math.floor(outN / 2) * 1.5); outN++; faceDir(o, -1, 1); posePup(o, { sit: true, wag: k, emote: 'sad', et: 1, hold: true, act: { hX: .25 } }); return; }
+      if (s.sat[k] >= 0) {
+        const a = this.cushAng(s, s.sat[k]); o.position.set(Math.cos(a) * this.CR, .35, Math.sin(a) * this.CR); faceDir(o, Math.cos(a), Math.sin(a));
+        if (!m.sat) { m.sat = 1; m.land = NOW; mgRe(v, k, 'happy'); }
+        posePup(o, Object.assign({ sit: true, wag: k, sq: clamp(1 - (NOW - m.land) / .2, 0, 1) * .4 }, reOpt(v, k))); return;
+      }
+      m.sat = 0;
       const a = this.pupAng(s, k);
       o.position.set(Math.cos(a) * this.R, 0, Math.sin(a) * this.R); faceDir(o, -Math.sin(a), Math.cos(a));
-      posePup(o, { hop: s.ph === 'music' ? Math.abs(Math.sin(NOW * 9 + k)) * .25 : 0, out: s.stun[k] > 0, wag: k });
+      if (s.stun[k] > 1 && !m.tr) { m.tr = 1; dustPuff(v, o.position.x, .05, o.position.z, 4, .9); }
+      if (!s.stun[k]) m.tr = 0;
+      let act;
+      if (s.ph === 'music') { const b = Math.sin(NOW * 9 + k); act = { aX: [-.5 + b * .7, -.5 - b * .7], aZ: [.7, .7], hZ: b * .12, roll: b * .06, eyes: 'h', wag: true }; }
+      else if (s.ph === 'stop' && !s.stun[k]) {
+        let best = null, bd = 9; for (let c = 0; c < s.cush; c++) if (s.seat[c] < 0) { const ca = this.cushAng(s, c), d = Math.abs(wrapA(ca - a)); if (d < bd) { bd = d; best = ca; } }
+        const lk = best == null ? { hX: 0, hY: 0 } : lookAct(o, Math.cos(best) * this.CR, .3, Math.sin(best) * this.CR, 1.2);
+        act = { crouch: .45, lean: .2, aX: [-1.2, -1.2], aZ: [.9, .9], hX: lk.hX, hY: lk.hY, mouth: .6, round: true, ears: .6 };
+      }
+      posePup(o, Object.assign({ hop: s.ph === 'music' ? Math.abs(Math.sin(NOW * 9 + k)) * .2 : 0, out: s.stun[k] > 0, wag: k, act }, reOpt(v, k)));
     });
+    dustTick(v);
   },
   hud(s, v) {
     if (s.ph === 'music') T('♪ ♫ ♪', W / 2, 40 + Math.sin(NOW * 6) * 4, 34, '#ff5c8a', 'center', { lw: 5 });
@@ -5192,8 +5418,14 @@ MGDEF.stack = {
       const mv = v.mv[k]; mv.visible = !t.dead;
       if (mv.visible) { mv.scale.x = t.mv.w; mv.position.set(cx + t.mv.x, .3 + (t.layers.length - .5) * this.BH + .25, 0); }
       top = Math.max(top, t.layers.length * this.BH);
-      const o = v.pups[k]; o.position.set(cx + s.w0 / 2 + .55, .3, .9); o.scale.setScalar(.7); faceDir(o, 0, 1);
-      posePup(o, { sq: t.flash > 0 ? .4 : 0, out: t.dead, wag: k });
+      // the baker pup turns to its tower, eyes on the sliding biscuit; a drop = both paws slap down; perfect = cheer;
+      // toppled = a shocked jump, then flat out
+      const o = v.pups[k], m = mgMem(v, k), L = t.layers.length; o.position.set(cx + s.w0 / 2 + .55, .3, .9); o.scale.setScalar(.7); faceDir(o, -.75, 1);
+      if (m.n === undefined && t.dead) { m.dd = 1; m.dt = -9; }
+      if (L !== m.n || t.dead && !m.dd) { if (m.n) m.bt = NOW; m.n = L; if (t.dead && !m.dd) { m.dd = 1; m.dt = NOW; } else if (t.flash > .3) mgRe(v, k, 'cheer'); }
+      const sl = t.dead ? null : lookAct(o, cx + t.mv.x, .3 + (L - .5) * this.BH + .25, 0), drop = clamp(1 - (NOW - (m.bt || -9)) / .22, 0, 1), shock = t.dead && NOW - m.dt < .7;
+      const act = t.dead ? null : { hX: sl.hX, hY: sl.hY, aX: [-1.3 + drop * .9, -1.3 + drop * .9], aZ: [.2, .2], lean: .1 + drop * .15, mouth: drop * .6, ears: .3, eyes: drop > .5 ? 'sq' : 'o' };
+      posePup(o, Object.assign({ sq: t.flash > 0 ? .3 : drop * .2, out: t.dead && !shock, wag: k, act }, shock ? { emote: 'surprise', et: NOW - m.dt } : reOpt(v, k)));
     });
     v.camY = lerp(v.camY, Math.max(0, top - 3), .08);
     v.cam.position.set(0, 6 + v.camY, 14 + s.n * .4); v.cam.lookAt(0, 2.4 + v.camY, 0);
@@ -5272,7 +5504,19 @@ MGDEF.count = {
       if (c.visible) { c.position.set(x, e.cat ? 0 : Math.abs(Math.sin(tt * 12)) * .35, e.z); c.rotation.y = e.spd > 0 ? 0 : Math.PI; }
     });
     const n = s.n, sp = Math.min(2.4, 13 / n);
-    v.pups.forEach((o, k) => { o.position.set((k - (n - 1) / 2) * sp, 0, 4.2); faceDir(o, 0, -1); posePup(o, { sq: s.pulse[k] > 0 ? .3 : 0, wag: k }); });
+    // heads follow the nearest critter, a press = a paw pointed at it + a nod; the reveal = turn round, cheer / droop
+    const vis = s.ev.map((e, i) => v.crit[i].visible ? v.crit[i].position : null).filter(Boolean);
+    const worst = Math.max(...s.cnt.map(c => Math.abs(c - s.total)));
+    v.pups.forEach((o, k) => {
+      o.position.set((k - (n - 1) / 2) * sp, 0, 4.2);
+      const rev = s.ph === 'reveal' && s.rt > .5, m = mgMem(v, k);
+      faceDir(o, 0, rev ? 1 : -1);
+      if (rev && !m.rv) { m.rv = 1; const d = Math.abs(s.cnt[k] - s.total); mgRe(v, k, d === 0 ? 'cheer' : d === worst ? 'sad' : 'happy'); }
+      let tgt = null, bd = 1e9; vis.forEach(p => { const d = Math.abs(p.x - o.position.x); if (d < bd) { bd = d; tgt = p; } });
+      const pu = clamp(s.pulse[k] / .18, 0, 1), lk = tgt && !rev ? lookAct(o, tgt.x, .4, tgt.z) : { hX: 0, hY: 0 };
+      const act = rev ? null : { hX: lk.hX + pu * .25, hY: lk.hY, aX: [-.3, -.3 - pu * 2.1], aZ: [.35, .35 + pu * .3], ears: tgt ? .5 : 0, mouth: pu * .5, wag: !!tgt };
+      posePup(o, Object.assign({ sq: pu * .15, wag: k, act }, reOpt(v, k)));
+    });
   },
   hud(s, v) {
     const n = s.n, sp = Math.min(2.4, 13 / n);
@@ -5347,9 +5591,16 @@ MGDEF.sumo = {
     s.pups.forEach((p, k) => {
       const o = v.pups[k];
       o.visible = p.y > -2.5; o.position.set(p.x, .4 + p.y, p.z); faceDir(o, Math.cos(p.f), Math.sin(p.f));
-      posePup(o, { sq: p.cd > .45 ? -.3 : 0, wag: k });
+      // spinning = arms out, wobbling; dash = a head-first lunge; knocked = flinch back; falling = flailing + splash
+      const m = mgMem(v, k), spd = Math.hypot(p.vx, p.vz), ln = clamp((p.cd - .35) / .35, 0, 1);
+      if (!p.out && p.cd < .3 && spd > 3.2 && !(m.kn > NOW - .5)) { m.kn = NOW; mgRe(v, k, 'surprise'); }
+      if (p.out && p.y < -.2 && !m.sp) { m.sp = 1; dustPuff(v, p.x, .1, p.z, 7, 1.6, 1.2); }
+      const act = p.out ? pmAct({ out: true, y: -1 }) : ln > 0 ? { lean: .45 * ln, aX: [-1.6, -1.6], aZ: [.25, .25], lX: [.55 * ln, -.6 * ln], hX: -.2, mouth: .7, eyes: 'sq', ears: -.4 }
+        : { aZ: [1.35, 1.35], aX: [-.2, -.2], roll: Math.sin(NOW * 6 + k) * .08, crouch: .2, ears: .3 };
+      posePup(o, Object.assign({ sq: ln > .6 ? -.25 : 0, wag: k, act }, p.out ? { emote: 'surprise', et: .3, hold: true } : reOpt(v, k)));
       const ar = v.arrows[k]; ar.visible = !p.out; ar.position.set(p.x, .4, p.z); ar.rotation.y = -p.f;
     });
+    if (!v.dust) mgDust(v, '#e8f8ff'); dustTick(v);
   },
   hud(s, v) {
     s.pups.forEach((p, k) => { if (p.y < -2.5) return; const [x, y] = toScreen(p.x, 2.4 + p.y, p.z, v.cam); tag(s.ps[k], x, y, p.out ? 'SPLASH!' : null, p.out ? '#7fd0ff' : '#fff'); });
@@ -5408,7 +5659,17 @@ MGDEF.bubble = {
     s.ps.forEach((p, k) => {
       const x = this.px(s, k), o = v.pups[k], st = s.state[k];
       o.position.set(x, 0, 1.6); faceDir(o, 0, 1); o.scale.setScalar(1.1);
-      posePup(o, { sq: st === 'blowing' ? -.15 - Math.sin(NOW * 20) * .05 : st === 'popped' ? .4 : 0, wag: k });
+      // blowing = paw up at the mouth, cheeks puffing, small round mouth; popped = shock then a droop; banked = watch
+      // the bubble float up, happy
+      const m = mgMem(v, k);
+      if (st !== m.st) { if (st === 'popped') { mgRe(v, k, 'surprise'); m.pt = NOW; } if (st === 'banked') mgRe(v, k, 'happy'); m.st = st; }
+      const puff = .6 + .4 * Math.sin(NOW * 9 + k);
+      let act = null;
+      if (st === 'blowing') act = { aX: [-.4, -2.45], aZ: [.35, .15], hX: -.18, puff, mouth: .35, round: true, eyes: 'sq', lean: -.06 - s.size[k] * .1, ears: .2 };
+      else if (st === 'idle' && s.ph === 'blow') act = { aX: [-.3, -1.3], aZ: [.35, .2], ears: .4 };
+      else if (st === 'banked') { const b = v.bub[k], lk = lookAct(o, b.position.x, b.position.y, b.position.z); act = { hX: lk.hX, hY: lk.hY, wag: true }; }
+      const re = st === 'popped' && NOW - m.pt > 1.1 ? { emote: 'sad', et: NOW - m.pt - 1.1 } : reOpt(v, k);
+      posePup(o, Object.assign({ sq: st === 'blowing' ? -.08 - Math.sin(NOW * 9 + k) * .04 : 0, wag: k, act }, re));
       const b = v.bub[k], r = .12 + s.size[k] * 1.05;
       b.visible = st === 'blowing' || (st === 'banked' && s.fly[k] < 2.5);
       b.scale.setScalar(r); b.position.set(x, 1.4 + r + s.fly[k] * 2.5, 2.3 + r * .3);
@@ -5517,13 +5778,29 @@ MGDEF.sprink = {
   },
   sync(s, v) {
     v.beams.forEach((b, i) => { b.visible = i === 0 || s.two; b.rotation.y = -(s.ang + i * Math.PI); b.drops.forEach((d, k) => { d.position.y = .45 + Math.sin(NOW * 20 + k) * .15; d.position.x = 1 + ((k * 1.6 + NOW * 6) % 8); }); });
+    // lone pup: rides the sprinkler, a flip = a stomp on it, taunts each soaked pup; pack: watch the jet, crouch as it
+    // nears, leap (kick on the double jump), squash on landing; a soaked pup makes the others flinch
+    const soaked = s.soaked; if (v.soak == null) v.soak = soaked;
     s.ps.forEach((p, k) => {
-      const o = v.pups[k];
-      if (k === s.lone) { o.position.set(0, .6, 0); o.scale.setScalar(.9); faceDir(o, Math.cos(s.ang), Math.sin(s.ang)); posePup(o, { sq: s.cd > .1 ? .3 : 0, wag: k }); return; }
+      const o = v.pups[k], m = mgMem(v, k);
+      if (k === s.lone) {
+        o.position.set(0, .6, 0); o.scale.setScalar(.9); faceDir(o, Math.cos(s.ang), Math.sin(s.ang));
+        if (soaked > v.soak) mgRe(v, k, 'taunt');
+        const st = clamp(s.cd / .35, 0, 1);
+        posePup(o, Object.assign({ sq: st * .3, wag: k, act: { crouch: .3 + st * .4, aX: [-.8 + st * .6, -.8 + st * .6], aZ: [.9 - st * .4, .9 - st * .4], lX: [-.4 * st, 0], hX: .1, mouth: st * .6, eyes: st > .3 ? 'sq' : 'o', wag: true } }, reOpt(v, k)));
+        return;
+      }
       const q = s.pups[k], r = this.R * (1 + q.ot * .4);
       o.position.set(Math.cos(q.a) * r, 0, Math.sin(q.a) * r); faceDir(o, -Math.cos(q.a), -Math.sin(q.a));
-      posePup(o, { hop: q.z * .9, sq: q.z ? -.3 : q.lag ? .3 : 0, out: q.out, wag: k });
+      if (soaked > v.soak && !q.out) mgRe(v, k, 'surprise');
+      if (q.z > 0 && !q.dj && m.dj !== 1) { m.dj = 1; m.djt = NOW; }
+      if (q.z <= 0) m.dj = 0;
+      const h = hopAct(v, k, q.z, q.out ? 0 : clamp(1 - this.eta(s, q.a) / .55, 0, 1)), a2 = s.ang + (s.two && Math.abs(wrapA(s.ang + Math.PI - q.a)) < Math.abs(wrapA(s.ang - q.a)) ? Math.PI : 0), lk = lookAct(o, Math.cos(a2) * 3, .4, Math.sin(a2) * 3, .8);
+      const kick = m.dj === 1 ? clamp(1 - (NOW - m.djt) / .35, 0, 1) : 0;
+      Object.assign(h.act, { hX: lk.hX, hY: lk.hY }, kick ? { lX: [-1.1 * kick, .6 * kick], aX: [-2.8, -2.8], mouth: .8, round: true } : {});
+      posePup(o, Object.assign({ hop: q.z * .9, sq: q.lag ? .3 : h.sq, out: q.out, wag: k, act: h.act }, reOpt(v, k)));
     });
+    v.soak = soaked;
     syncRings(v);
   },
   hud(s, v) {
@@ -5608,15 +5885,35 @@ MGDEF.sentry = {
   sync(s, v) {
     const ang = this.lookAng(s), g2 = v.pups[s.lone];
     g2.position.set(0, .45, 0); g2.scale.setScalar(1.15); faceDir(g2, Math.cos(ang), Math.sin(ang));
-    posePup(g2, { sq: s.bark > 0 ? -.35 : s.look < 0 ? .35 : 0, wag: 0 });
+    // guard: crouched and squinting while it watches, a big lunging WOOF, a hoarse cough, sniffing the pile, a taunt
+    // on a catch; pack: sneak = low tiptoe crouch, watched and still = frozen statue looking innocent, caught = dizzy
+    // spin back, made it = cheer
+    const gm = mgMem(v, s.lone);
+    if (gm.n != null && s.caught > gm.n) mgRe(v, s.lone, 'taunt'); gm.n = s.caught;
+    const bk = clamp(s.bark / .45, 0, 1), watch = s.look >= 0 && s.turn >= 1;
+    const gact = bk > 0 ? { lean: .35 * bk, crouch: .2, hX: -.3 * bk, mouth: bk, ears: -.6 * bk, aX: [-.9 * bk, -.9 * bk], aZ: [.8, .8] }
+      : s.look < 0 ? { hX: .5, lean: .15, crouch: .3, mouth: .25, wag: true }
+      : s.hoarse > .35 ? { hX: .25, mouth: .3, round: true, eyes: 'sq', bob: Math.abs(Math.sin(NOW * 16)) * .03 }
+      : { crouch: watch ? .35 : .15, eyes: watch ? 'sq' : 'o', ears: watch ? .6 : .2, hX: -.05 };
+    posePup(g2, Object.assign({ sq: bk > .6 ? -.2 : 0, wag: 0, act: gact }, reOpt(v, s.lone)));
     v.gaze.rotation.y = -ang; v.gaze.visible = s.look >= 0;
     v.gazeM.color.set(s.turn >= 1 ? '#ff4d4d' : '#ffd23f'); v.gazeM.opacity = s.turn >= 1 ? .3 : .16;
     v.barkR.visible = s.bark > 0; if (s.bark > 0) { const u = 1 - s.bark / .45; v.barkR.scale.set(1 + u * 5, 1 + u * 5, 1); }
     s.pack.forEach(k => {
       const o = v.pups[k], r = s.r[k];
       o.position.set(Math.cos(s.a[k]) * r, 0, Math.sin(s.a[k]) * r);
-      if (s.back[k] > 0) o.rotation.y = NOW * 14; else faceDir(o, -Math.cos(s.a[k]), -Math.sin(s.a[k]));
-      posePup(o, { hop: s.mov[k] ? Math.abs(Math.sin(NOW * 9 + k)) * .1 : s.got[k] ? Math.abs(Math.sin(NOW * 6 + k)) * .3 : 0, sq: s.mov[k] ? .3 : 0, wag: k });
+      if (s.back[k] > 0) { o.rotation.y = NOW * 14; o.userData.ft = null; } else faceDir(o, -Math.cos(s.a[k]), -Math.sin(s.a[k]));
+      const m = mgMem(v, k);
+      if (s.got[k] && !m.got) { m.got = 1; mgRe(v, k, 'cheer'); }
+      const seen = s.look === k && s.turn >= 1;
+      let act = null, emote, et, hold = false;
+      if (s.back[k] > 0) { emote = 'dizzy'; et = .9 - s.back[k]; hold = true; }
+      else if (s.got[k]) act = { wag: true, eyes: 'h', mouth: .5 };
+      else if (s.mov[k]) act = { crouch: .75, lean: .32, aX: [-1 + Math.sin(NOW * 9 + k) * .3, -1 - Math.sin(NOW * 9 + k) * .3], aZ: [.3, .3], hX: -.3, ears: -.5, eyes: 'sq' };
+      else if (seen) act = { aX: [0, 0], aZ: [.12, .12], hY: Math.sin(NOW * 2 + k) * .45, hX: -.25, mouth: .25, round: true, eyes: 'o', ears: .2 }; /* frozen, whistling innocently */
+      else act = { crouch: .55, lean: .15, aX: [-.7, -.7], aZ: [.3, .3], ears: .4 };
+      const re = reOpt(v, k);
+      posePup(o, { hop: s.got[k] ? Math.abs(Math.sin(NOW * 6 + k)) * .3 : 0, wag: k, act, emote: emote || re.emote, et: emote ? et : re.et, hold });
     });
     syncRings(v);
   },
@@ -5672,13 +5969,54 @@ MGDEF.tug = {
     v.cam.position.set(0, 6.2, 13.5); v.cam.lookAt(0, 1.4, 0);
     return v;
   },
+  /* Animation (view-only): pups face the knot, grip the rope (lowered to paw height) and lean back with braced feet;
+     each press = a yank (lean + step back + dust), HEAVE! = the whole team heaves in rhythm, eyes squeezed; the knot
+     sliding the wrong way = a forward stumble with scrambling feet; the rope wobbles with the tension. At the finish the
+     winners tumble back onto their bottoms and cheer, the losers are dragged face-first into the mud, then sit up dizzy. */
   sync(s, v) {
-    v.rope.position.x = s.x;
+    const fin = MS && (MS.phase === 'finish' || MS.phase === 'ranks'), ft = !fin ? 0 : MS.phase === 'finish' ? MS.t : MS.t + 1.3;
+    const ten = clamp(Math.abs(s.v) / 1.4, .25, 1), hv = s.heave > 0 && !fin ? 1 : 0, beat = .5 + .5 * Math.sin(NOW * 11);
+    v.rope.position.set(s.x, -.24 + (fin ? 0 : Math.sin(NOW * 31) * .012 * ten + hv * beat * .025), 0);
+    v.rope.rotation.x = fin ? 0 : Math.sin(NOW * 17) * .05 * ten;
+    if (!v.dust) mgDust(v, '#c9a274');
+    const decided = fin && s.rank && s.rank.some(r => r > 0);
     s.ps.forEach((p, k) => {
-      const [x, z, t] = this.slot(s, k), o = v.pups[k];
-      o.position.set(x, 0, z); faceDir(o, t ? 1 : -1, 0);
-      posePup(o, { sq: s.pulse[k] > 0 ? .35 : .1, hop: s.pulse[k] > 0 ? .06 : 0, wag: k });
+      const [x0, z0, t] = this.slot(s, k), o = v.pups[k], sx = t ? 1 : -1, z = z0 * .55, m = mgMem(v, k);
+      const pu = clamp(s.pulse[k] / .15, 0, 1), yank = pu * pu * (3 - 2 * pu);
+      if (s.pulse[k] > m.p + .01 && !fin) dustPuff(v, x0 + sx * .25, .05, z, 2, .7); /* a fresh press: dig the heels in */
+      m.p = s.pulse[k];
+      const ag = fin ? 0 : clamp(-sx * s.v / 1.1, 0, 1), go = fin ? 0 : clamp(sx * s.v / 1.1, 0, 1);
+      if (ag > .45 && NOW - m.t > .12) { m.t = NOW; dustPuff(v, x0 - sx * .1, .05, z, 1, .6); } /* feet skidding toward the knot */
+      if (fin && decided) {
+        const won = s.rank[k] === 0, e = clamp(ft / .5, 0, 1), ee = 1 - (1 - e) * (1 - e);
+        if (won) {
+          o.position.set(x0 + sx * .7 * ee, 0, z); faceDir(o, -sx, -Math.sign(z0) * .25);
+          if (!m.fx) { m.fx = 1; dustPuff(v, x0 + sx * .9, .05, z, 4, 1); }
+          if (ft < 1.15) posePup(o, { sit: true, wag: k, emote: 'happy', et: ft, hold: true, act: { lean: -.55 * ee * (1 - clamp((ft - .7) / .45, 0, 1)), aX: [-2.2, -2.2], aZ: [1.4, 1.4], lX: [-.5, -.5] } });
+          else posePup(o, { wag: k });
+        } else {
+          const d = clamp((ft - .1) / .7, 0, 1), dd = d * d * (3 - 2 * d);
+          o.position.set(x0 - sx * (1.5 * dd), 0, z * (1 - .6 * dd)); faceDir(o, -sx, 0);
+          if (d >= 1 && !m.fx) { m.fx = 1; dustPuff(v, o.position.x, .05, z, 6, 1.2, 1.3); }
+          if (ft < 1.7) posePup(o, { wag: k, act: { lean: .25 + 1.05 * dd, bob: -.1 * dd, aX: [-2.9, -2.9], aZ: [.6, .6], lX: [.6 * dd, .6 * dd], hX: -.4 * dd, mouth: .8, round: true, eyes: 'x' } });
+          else posePup(o, { sit: true, wag: k, emote: 'dizzy', et: ft - 1.7, hold: true });
+        }
+        return;
+      }
+      m.fx = 0;
+      // pulling: back from the knot by the yank, rope in both paws, front foot braced
+      o.position.set(x0 + sx * .16 * yank - sx * .22 * ag, 0, z); faceDir(o, -sx, -Math.sign(z0) * .25);
+      const heave = hv * (.35 + .65 * beat), lean = -.42 - .22 * yank - .18 * heave - .12 * go + ag * .85;
+      const scr = Math.sin(NOW * 24 + k) * ag, lead = k % 2 ? 1 : 0;
+      posePup(o, { wag: k, act: {
+        lean, crouch: .45 + .2 * heave - .3 * ag, hipX: .1 + .1 * yank,
+        aX: [-1.55 - .3 * ag + .25 * yank, -1.55 - .3 * ag + .25 * yank], aZ: [.12, .12],
+        lX: [lead ? -.7 + scr * .9 : .25 - scr * .9, lead ? .25 + scr * .9 : -.7 - scr * .9],
+        hX: -lean * .7 - .1 - .08 * heave + .15 * ag, hZ: Math.sin(NOW * 7 + k) * .05 * ten, ears: -.2 * heave,
+        mouth: ag > .4 ? .9 : .3 + .3 * heave + .3 * yank, round: ag > .4, eyes: ag > .4 ? 'o' : heave || yank > .3 ? 'sq' : 'o', wag: heave > 0,
+      } });
     });
+    dustTick(v);
     syncRings(v);
   },
   hud(s, v) {
@@ -5753,16 +6091,35 @@ MGDEF.relay = {
     v.cam.position.set(-1.6, 16.5, 16); v.cam.lookAt(-1.6, 0, .4);
     return v;
   },
+  /* runner = sprint lean + the team baton in its paw, tuck jump over puddles, slip = a sit-down skid in a mud splash;
+     the next pup in line crouches with a paw out for the baton, the rest cheer their runner on */
   sync(s, v) {
+    if (!v.batons) v.batons = [0, 1].map(t => { const b = M(GEO.cyl, s.tcol ? s.tcol[t] : '#ffd23f', 0, 0, 0, v.scene, .07, .5, .07); b.rotation.z = Math.PI / 2; b.castShadow = false; b.userData.noInk = true; return b; });
+    if (!v.dust) mgDust(v, '#8a5a34');
     s.tm.forEach((T, t) => {
-      const z = this.laneZ(t), run = T.done ? -1 : this.runner(s, t);
+      const z = this.laneZ(t), run = T.done ? -1 : this.runner(s, t), tm = mgMem(v, 10 + t);
       let q = 0;
+      if (T.stun > .7 && !tm.sl) { tm.sl = 1; dustPuff(v, T.x, .05, z, 6, 1.2); }
+      if (T.stun <= 0) tm.sl = 0;
+      const bt = v.batons[t]; bt.visible = !T.done;
       s.mem[t].forEach(k => {
         const o = v.pups[k];
-        if (k === run) { o.position.set(T.x, T.z * .8, z); o.rotation.y = T.dir > 0 ? Math.PI / 2 : -Math.PI / 2; posePup(o, { hop: T.z || T.stun > 0 ? 0 : Math.abs(Math.sin(NOW * 14)) * .15, sq: T.z ? -.3 : 0, out: T.stun > 0, wag: k }); }
-        else { o.position.set(this.X0 - 1.3 - q * .95, 0, z + (q % 2 ? .45 : -.45)); q++; faceDir(o, 1, 0); posePup(o, { hop: Math.abs(Math.sin(NOW * 6 + k)) * .1, wag: k }); }
+        if (k === run) {
+          o.position.set(T.x, T.z * .8, z); faceDir(o, T.dir, 0);
+          const h = hopAct(v, k, T.z), sl = T.stun > 0;
+          if (T.z > 0 || !sl) Object.assign(h.act, { lean: T.z > 0 ? .1 : .3, aX: [-1.4, T.z > 0 ? -2.6 : -.2 + Math.sin(NOW * 16) * .8], mouth: .4, ears: -.3 });
+          posePup(o, Object.assign({ hop: T.z || sl ? 0 : Math.abs(Math.sin(NOW * 14)) * .1, sq: h.sq, sit: sl, wag: k, act: sl ? { lean: -.2, aX: [-2.2, -2.2], aZ: [1.3, 1.3] } : h.act }, sl ? { emote: 'dizzy', et: .75 - T.stun, hold: true } : {}));
+          bt.position.set(T.x + T.dir * .38, .78 + T.z * .8 - (sl ? .3 : 0), z + .22); bt.rotation.y = Math.sin(NOW * 16) * .3;
+        } else {
+          o.position.set(this.X0 - 1.3 - q * .95, 0, z + (q % 2 ? .45 : -.45)); faceDir(o, 1, 0);
+          const next = q === 0 && !T.done && T.dir < 0 && T.x < this.X0 + 6;
+          const act = next ? { crouch: .5, lean: .25, aX: [-1.6, -.4], aZ: [.3, .3], ears: .6, eyes: 'sq' } : { aX: [-2.7 + Math.sin(NOW * 8 + k) * .3, -2.7 - Math.sin(NOW * 8 + k) * .3], aZ: [1, 1], mouth: .6, eyes: 'h', wag: true };
+          posePup(o, { hop: next ? 0 : Math.abs(Math.sin(NOW * 6 + k)) * .12, wag: k, act });
+          q++;
+        }
       });
     });
+    dustTick(v);
     syncRings(v);
   },
   hud(s, v) {
@@ -5865,8 +6222,13 @@ MGDEF.bark = {
       const f = s.fb[k], age = s.t - f.t, hit = age < .25 && f.txt[0] !== 'm' && f.txt[0] !== 'o';
       v.rings[k].scale.set(.5 + (hit ? (1 - age * 4) * .4 : 0), .5 + (hit ? (1 - age * 4) * .4 : 0), .2);
       v.rings[k].material = mat(hit ? '#ffe066' : '#ffffff');
-      const o = v.pups[k]; o.position.set(x, 0, this.HZ + 1.1); faceDir(o, 0, 1);
-      posePup(o, { hop: hit ? .25 * (1 - age * 4) : pu * .08, sq: hit ? -.35 : -pu * .1, wag: k });
+      // a bark = head thrown up, mouth wide, arms flung out; between notes a nod + bounce on the beat; a miss = a small
+      // droop; barking at nothing = a startled jump; an 8+ combo = happy eyes and a wagging tail
+      const o = v.pups[k], m = mgMem(v, k); o.position.set(x, 0, this.HZ + 1.1); faceDir(o, 0, 1);
+      if (f.t !== m.t) { m.t = f.t; if (f.txt[0] === 'o') mgRe(v, k, 'surprise'); }
+      const bk = hit ? 1 - age * 4 : 0, miss = f.txt[0] === 'm' && age < .4 ? 1 - age / .4 : 0, hot = s.combo[k] >= 8;
+      const act = { lean: .12 * bk - .05 * miss, hX: -.45 * bk + .14 * pu + .25 * miss, aX: [-1.7 * bk - .3, -1.7 * bk - .3], aZ: [.4 + 1.1 * bk, .4 + 1.1 * bk], mouth: bk > .05 ? .4 + .6 * bk : 0, ears: .6 * bk - .4 * miss, bob: pu * .03, eyes: hot ? 'h' : bk > .5 ? 'sq' : 'o', wag: hot };
+      posePup(o, Object.assign({ hop: hit ? .2 * bk : pu * .06, sq: hit ? -.3 * bk : -pu * .1, wag: k, act }, reOpt(v, k)));
     });
   },
   hud(s, v) {
@@ -5972,10 +6334,20 @@ MGDEF.cups = {
       const m = v.marks[k], on = s.ph === 'pick' && s.pick[k] < 0;
       m.visible = on;
       if (on) { const sl = this.ptr(s, k), sameBefore = s.ps.slice(0, k).filter((q, j) => s.pick[j] < 0 && this.ptr(s, j) === sl).length; m.position.set(this.slotX(s, sl) + (sameBefore % 3 - 1) * .32, 3 + Math.floor(sameBefore / 3) * .5 + Math.sin(NOW * 8 + k) * .08, .2); }
-      const o = v.pups[k], x = this.pupX(s, k);
-      o.position.set(x, 0, 3.4); faceDir(o, 0, 1); o.scale.setScalar(.85);
-      const res = s.ph === 'reveal' && s.t > .4;
-      posePup(o, { hop: res && s.got[k] ? Math.abs(Math.sin(NOW * 9 + k)) * .4 : 0, sq: res && !s.got[k] ? .35 : s.pick[k] >= 0 && s.ph === 'pick' ? .2 : 0, wag: k });
+      // watching: turned to the table, head following the bone's cup through every swap; picking: a paw pointing at
+      // its pointer's cup, locked in = a nod; the reveal: turn round, cheer or droop
+      const o = v.pups[k], x = this.pupX(s, k), mm = mgMem(v, k);
+      o.position.set(x, 0, 3.4); o.scale.setScalar(.85);
+      const res = s.ph === 'reveal' && s.t > .4, key = s.r;
+      if (res && mm.rv !== key) { mm.rv = key; mgRe(v, k, s.got[k] ? 'cheer' : 'sad'); }
+      let tx = bx, act;
+      if (s.ph === 'pick') tx = this.slotX(s, s.pick[k] >= 0 ? s.pick[k] : this.ptr(s, k));
+      if (res) faceDir(o, 0, 1); else faceDir(o, (tx - x) * .35, -1);
+      if (!res) {
+        const lk = lookAct(o, tx, 1.3, .2 + (s.ph === 'pick' ? 0 : bz)), pk = s.ph === 'pick', lock = pk && s.pick[k] >= 0;
+        act = { hX: lk.hX + (lock ? .2 : 0), hY: lk.hY, ears: .5, aX: pk && !lock ? [-.3, -2.1] : [-.4, -.4], aZ: pk && !lock ? [.35, .25] : [.3, .3], lean: s.ph === 'mix' ? .12 : 0, eyes: s.ph === 'mix' ? 'sq' : 'o', mouth: lock ? .4 : 0 };
+      }
+      posePup(o, Object.assign({ hop: res && s.got[k] ? Math.abs(Math.sin(NOW * 9 + k)) * .3 : 0, wag: k, act }, reOpt(v, k)));
     });
   },
   hud(s, v) {
@@ -6090,8 +6462,15 @@ MGDEF.frisbee = {
         const st = m.userData.stick; st.visible = !r; st.position.set(x, y / 2, z); st.scale.y = y;
       });
       for (const [i, m] of L.disc) if (!seen.has(i)) { v.scene.remove(m); v.scene.remove(m.userData.sh); v.scene.remove(m.userData.stick); L.disc.delete(i); }
-      const o = v.pups[k]; o.position.set(this.XP + .45, 0, z); faceDir(o, -1, 0);
-      posePup(o, { hop: s.z[k], sq: s.vz[k] > 3 ? -.3 : s.z[k] === 0 && s.t - s.fb[k].t < .15 ? .3 : 0, wag: k });
+      // eyes on the next disc, a crouch as it closes in, a leap with the mouth snapping open, a happy chomp on a catch,
+      // a startled look on a whiff
+      const o = v.pups[k], m = mgMem(v, k); o.position.set(this.XP + .45, 0, z); faceDir(o, -1, 0);
+      const fb = s.fb[k]; if (fb.t !== m.t) { m.t = fb.t; mgRe(v, k, fb.txt[0] === '+' ? 'happy' : 'surprise'); }
+      let nx = null, eta = 9; s.fr.forEach((f, i) => { const at = f.t0 + f.dur - s.t; if (!s.res[k][i] && at > -.05 && at < eta && s.t >= f.t0) { eta = at; nx = f; } });
+      const h = hopAct(v, k, s.z[k], s.z[k] === 0 && nx ? clamp(1 - eta / .4, 0, 1) * .8 : 0);
+      if (nx) { const [fx] = this.fpos(s, nx), lk = lookAct(o, fx, nx.y, z); Object.assign(h.act, { hX: lk.hX, hY: lk.hY, mouth: eta < .3 ? .9 : h.act.mouth, round: eta < .3 }); }
+      if (s.z[k] > 0) Object.assign(h.act, { aX: [-2.5, -2.5], aZ: [.8, .8] });
+      posePup(o, Object.assign({ hop: s.z[k], sq: h.sq, wag: k, act: h.act }, reOpt(v, k)));
     });
   },
   hud(s, v) {
@@ -6693,7 +7072,10 @@ function pmPose(s, v, k, y0 = 0, extra = {}) {
   o.position.set(p.x, y0 + p.y, p.z);
   faceDir(o, Math.cos(p.f), Math.sin(p.f));
   const dz = p.hit < .9 && !p.out;
-  posePup(o, Object.assign({ sq: p.lg > 0 ? -.3 : p.hit < .15 ? .45 : 0, emote: dz ? 'dizzy' : '', et: p.hit, hold: true, wag: k, sit: p.sit >= 0 }, extra));
+  // run lean, shove lunge, flinch, falling flail (pmAct); `extra.act` fields from a game are laid over it
+  const act = Object.assign(pmAct(p), extra.act || {});
+  if (p.out && p.y < -.2 && v.dust !== undefined && !(v.pmSp || (v.pmSp = []))[k]) { v.pmSp[k] = 1; dustPuff(v, p.x, .1, p.z, 7, 1.6, 1.2); }
+  posePup(o, Object.assign({ sq: p.lg > 0 ? -.3 : p.hit < .15 ? .45 : 0, emote: dz ? 'dizzy' : p.out && p.y < -.05 ? 'surprise' : '', et: dz ? p.hit : .3, hold: true, wag: k, sit: p.sit >= 0 }, extra, { act }));
 }
 function pmFx(s, v) {
   let shake = 0;
@@ -6776,7 +7158,8 @@ MGDEF.asumo = {
   sync(s, v) {
     v.raft.scale.set(s.R, .4, s.R); v.ring.scale.set(s.R, s.R, s.R);
     if (v.mgb) MGB_SYNC.sumo(s, v);
-    s.pm.forEach((p, k) => { pmPose(s, v, k, .4); const ar = v.arrows[k]; ar.visible = !p.out; ar.position.set(p.x, .4 + p.y, p.z); ar.rotation.y = -p.f; });
+    if (!v.dust) mgDust(v, '#e8f8ff'); dustTick(v);
+    s.pm.forEach((p, k) => { pmPose(s, v, k, .4, { act: p.lg > 0 || p.out ? {} : { aZ: [.9, .9], crouch: .15 } }); const ar = v.arrows[k]; ar.visible = !p.out; ar.position.set(p.x, .4 + p.y, p.z); ar.rotation.y = -p.f; });
     pmFx(s, v);
   },
   hud(s, v) {
@@ -6864,8 +7247,10 @@ MGDEF.acush = {
     const pop = s.ph === 'stop' ? easeBack(clamp(s.st / .3, 0, 1)) : 1;
     v.cush.forEach((c, i) => { c.visible = s.ph !== 'music' && i < (s.cs || []).length; if (c.visible) { c.position.set(s.cs[i][0], .18, s.cs[i][1]); c.scale.setScalar(Math.max(.01, pop)); } });
     s.pm.forEach((p, k) => {
-      if (s.out[k]) { const o = v.pups[k]; o.position.set(p.x, 0, p.z); faceDir(o, -1, 1); posePup(o, { sq: .3, wag: k }); return; }
-      pmPose(s, v, k, p.sit >= 0 ? .35 : 0);
+      if (s.out[k]) { const o = v.pups[k]; o.position.set(p.x, 0, p.z); faceDir(o, -1, 1); posePup(o, { sit: true, wag: k, emote: 'sad', et: 1, hold: true }); return; }
+      // music = dance arms while running about; stop = scrambling with arms out; sitting = a smug wag
+      const b = Math.sin(NOW * 9 + k);
+      pmPose(s, v, k, p.sit >= 0 ? .35 : 0, { act: p.lg > 0 ? {} : s.ph === 'music' ? { aX: [-.5 + b * .7, -.5 - b * .7], aZ: [.7, .7], hZ: b * .1, eyes: 'h', wag: true } : p.sit >= 0 ? { wag: true, eyes: 'h' } : s.ph === 'stop' ? { aX: [-1.2, -1.2], aZ: [.9, .9], mouth: .6, round: true, ears: .6 } : {} });
     });
     pmFx(s, v);
   },
@@ -6936,7 +7321,14 @@ MGDEF.atag = {
   score: (s, k) => s.outAt[k] === Infinity ? 'Survived!' : 'Popped',
   view(s) { const v = MGDEF.potato.view.call(MGDEF.potato, s); return pmView(v); },
   sync(s, v) {
-    s.pm.forEach((p, k) => { if (s.out[k] && !(s.ph === 'boom' && s.holder === k)) { const o = v.pups[k]; o.position.set(p.x, .06, p.z); faceDir(o, -1, 0); posePup(o, { out: true, wag: k }); } else pmPose(s, v, k, .06); });
+    // the holder runs with the toy held up over its head (shaking as it heats up); the rest keep an eye on it
+    const hp0 = s.pm[s.holder], ht = s.ph === 'play' ? s.ft / s.fuse : 0;
+    s.pm.forEach((p, k) => {
+      if (s.out[k] && !(s.ph === 'boom' && s.holder === k)) { const o = v.pups[k]; o.position.set(p.x, .06, p.z); faceDir(o, -1, 0); posePup(o, { out: true, wag: k }); return; }
+      const sh = Math.sin(NOW * (14 + ht * 30)) * (.03 + ht * .1), o = v.pups[k];
+      const lk = o && k !== s.holder ? lookAct(o, hp0.x, 2, hp0.z) : null;
+      pmPose(s, v, k, .06, { act: p.lg > 0 || p.st > 0 ? {} : k === s.holder && s.ph === 'play' ? { aX: [-2.85 + sh, -2.85 - sh], aZ: [.45, .45], eyes: ht > .7 ? 'sq' : 'o', mouth: .4 } : lk ? { hX: lk.hX, hY: lk.hY, ears: .4 } : {} });
+    });
     const hp = s.pm[s.holder], fly = s.prev >= 0 && s.t - s.pt < .25 ? (s.t - s.pt) / .25 : 1, fp = s.prev >= 0 ? s.pm[s.prev] : hp;
     const tx = lerp(fp.x, hp.x, fly), tz = lerp(fp.z, hp.z, fly), ty = 2.6 + Math.sin(fly * Math.PI) * 1.2;
     const heat = s.ph === 'boom' ? 1 : s.ph === 'play' ? s.ft / s.fuse : 0, wo = Math.sin(NOW * (8 + heat * 30)) * (.05 + heat * .15);
@@ -7026,7 +7418,13 @@ MGDEF.kotk = {
     v.bed.position.set(v.bx, 0, v.bz); v.glow.position.set(v.bx, .05, v.bz);
     v.glowM.color.set(s.cont ? '#ff5c8a' : '#ffd23f'); v.glowM.opacity = s.king >= 0 ? .55 + Math.sin(NOW * 10) * .2 : .35;
     const soon = s.mt != null && this.MOVE - s.mt < 2; v.ghost.visible = soon; if (soon) { v.ghost.position.set(s.nxt[0], .05, s.nxt[1]); v.ghostM.opacity = .3 + Math.abs(Math.sin(NOW * 8)) * .4; }
-    s.pm.forEach((p, k) => pmPose(s, v, k, Math.hypot(p.x - v.bx, p.z - v.bz) < this.BR - .2 ? .22 : 0));
+    // the king bounces happily on the bed; pups sharing it brace and push; the rest eye the bed
+    s.pm.forEach((p, k) => {
+      const on = Math.hypot(p.x - v.bx, p.z - v.bz) < this.BR - .2, o = v.pups[k];
+      const act = p.lg > 0 || p.st > 0 ? {} : k === s.king ? { eyes: 'h', mouth: .5, wag: true, bob: Math.abs(Math.sin(NOW * 8 + k)) * .06, aZ: [1, 1] }
+        : on && s.cont ? { crouch: .35, lean: .15, aX: [-1.3, -1.3], aZ: [.5, .5], eyes: 'sq' } : o ? (() => { const lk = lookAct(o, v.bx, .3, v.bz, .7); return { hX: lk.hX, hY: lk.hY }; })() : {};
+      pmPose(s, v, k, on ? .22 : 0, { act });
+    });
     v.crown.visible = s.king >= 0;
     if (s.king >= 0) { const p = s.pm[s.king]; v.crown.position.set(p.x, 2.35 + Math.sin(NOW * 5) * .08, p.z); v.crown.rotation.y = NOW * 1.5; }
     pmFx(s, v);
