@@ -7575,7 +7575,7 @@ function titleHTML() {
   <div class="card tmenu">
     <button class="btn pri big" data-do="go:setup">🎉 Start a party</button>
     <div class="two"><button class="btn ghost" data-do="go:help">📖 How to play</button><button class="btn ghost" data-do="go:play">🎮 Minigames</button></div>
-    ${NET.on ? '<button class="btn ghost" data-do="go:online">🌐 Online party (preview)</button>' : ''}
+    ${NET.on ? `<button class="btn ghost" data-do="go:online">🌐 Online party${SB_ON ? '' : ' (preview)'}</button>` : ''}
     ${soundBtns()}
   </div>
   <div class="tfoot">Every player needs just <b>one button</b>: a key, a gamepad button or a touch pad.</div></div>`;
@@ -7794,7 +7794,11 @@ for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) touchEl.a
    snapshots (every SNAP_EVERY s), one snapshot behind and interpolated by deepLerp. */
 const NET_Q = new URLSearchParams(location.search).get('online') || '';
 const NET_URL = ''; // relay v2 wss:// address once it exists; '?online=wss://...' overrides; '?online=local' = tabs of one browser
-const NET = { on: !!(NET_Q || NET_URL), mode: 'local', tr: null, me: null, code: '', status: '', lobby: null, seat: -1,
+// Supabase Realtime (SUPABASE.md): the project's URL + anon / publishable key. Both set = "Online party" on the title
+// for everyone (GitHub Pages; the claude.ai artifact sandbox blocks it). '?online=sb' forces it (tests use a fake client).
+const SB_URL = 'https://sprqmpzqijgvodulzwqy.supabase.co', SB_KEY = 'sb_publishable_T6_blAenbklTZzDwxgOTgA_UaAjuint'; // publishable key: meant to be public
+const SB_ON = !!(SB_URL && SB_KEY);
+const NET = { on: !!(NET_Q || NET_URL || SB_ON), mode: 'local', tr: null, me: null, code: '', status: '', lobby: null, seat: -1,
   rdown: {}, rlatch: {}, runi: {}, rax: {}, rla: {}, rlb: {}, myIn: '', inT: 0, lobbyMode: 'simple', uid: 0, sendT: 0, sentGame: false, snaps: [], arrive: 0, gap: .1, myDown: false, ptr: false, helloT: 0,
   name: 'Friend', pup: 'mochi', sig: '', pupSig: '' };
 const SNAP_EVERY = .1;
@@ -7838,9 +7842,180 @@ function wsTransport(url, code, host) {
   };
   return T;
 }
+/* Supabase Realtime Broadcast (free plan, no tables). Room channel `pawty:<CODE>`: the host's messages to everyone go
+   out ONCE there (Broadcast reaches every guest), guests ask to join there ({j: tok} -> {e: tok, why} if full).
+   Each guest also has its own channel `pawty:<CODE>:<tok>` (only it and the host join): its input goes up there and the
+   host's messages to it alone come down there, so one guest's input is never delivered to the others.
+   Presence: the host is 'host' on the room channel (no host = no party, host gone = closed); a guest is 'g' on its own
+   channel (a closed tab = a drop). The host hands out ids g1, g2, ... (never reused) and keeps the 5-guest limit.
+   Free plan: 100 events/s per project, one event = one message sent or one delivered. The room stays under SB.budget:
+   snapGap() lowers the snapshot rate with many guests, and guests batch their messages to the rate `r` the host
+   announces; the host replays a batch one button change per frame, so taps and mashes aren't lost. SB.tune = false = the
+   plain mapping (one channel, no batching), kept only to measure the difference. */
+const SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js';
+const SB = { budget: 80, down: { move: 48, one: 60 }, max: 5, tune: true, grace: 6 }; // grace: s a vanished Presence may come back (a network blip) before it counts as gone
+let sbLib = null;
+function sbLoad() {
+  if (window.supabase && window.supabase.createClient) return Promise.resolve(window.supabase);
+  return sbLib || (sbLib = new Promise((ok, no) => {
+    const el = document.createElement('script'); el.src = SB_LIB; el.crossOrigin = 'anonymous';
+    el.onload = () => window.supabase ? ok(window.supabase) : no(); el.onerror = () => { sbLib = null; no(); };
+    document.head.appendChild(el);
+  }));
+}
+function sbTransport(code, host) {
+  const T = { id: host ? 'host' : null }, tune = SB.tune, tok = Math.random().toString(36).slice(2, 10), at = Date.now();
+  let cl = null, room = null, dead = false, clock = 0;
+  const fail = why => { if (dead) return; T.close(true); if (T.onerr) T.onerr(why); };
+  const pub = (ch, p) => ch && !dead ? ch.send({ type: 'broadcast', event: 'm', payload: p }) : null;
+  const chan = (topic, key) => cl.channel(topic, { config: { broadcast: { self: false }, presence: { key } } });
+  const bad = st => st === 'CHANNEL_ERROR' || st === 'TIMED_OUT';
+  const NOSRV = 'Could not reach the party server.';
+  // host: guests by id { n, tok, ch, q (messages waiting for replay), prev (buttons last replayed), goneT }
+  const gs = {}; let nextId = 1, upRate = 30, opened = false, subAt = -1;
+  // guest: own channel, outgoing batch, rate from the host
+  let up = null, q = [], lastF = -1e9, rate = 10, me = 0, roomOk = false, upOk = false, seen = false, asked = false, noHostT = -1, askT = 0, reT = 0, hostGoneT = -1;
+  function open() { if (opened) return; opened = true; if (T.onopen) T.onopen(code); }
+  function hostStart() {
+    room = chan('pawty:' + code, 'host');
+    room.on('broadcast', { event: 'm' }, ({ payload: p }) => {
+      if (p.j) return hostJoin(p.j);
+      if (p.from != null && gs['g' + p.from]) hostRecv('g' + p.from, [p.m]);
+    });
+    // an older host on this code: take another code before anyone sees this one
+    room.on('presence', { event: 'sync' }, () => {
+      if (opened) return;
+      if ((room.presenceState().host || []).some(h => h.tok !== tok && h.at <= at)) { const old = room; room = null; cl.removeChannel(old); code = netCode(); subAt = -1; return hostStart(); }
+      open();
+    });
+    // after the first connect, errors are left to supabase-js (it rejoins by itself; SUBSCRIBED again re-tracks)
+    room.subscribe(st => { if (dead) return; if (st === 'SUBSCRIBED') { if (!opened) subAt = clock; room.track({ tok, at }); } else if (bad(st) && !opened) fail(NOSRV); });
+  }
+  function hostJoin(g) {
+    // asked again: our answer got lost (answer again), or our join of its channel never came up (start over, new id)
+    const hid = Object.keys(gs).find(k => gs[k].tok === g), had = hid && gs[hid];
+    if (had && had.up) return tune ? pub(had.ch, { ok: had.n }) : pub(room, { ok: g, you: had.n });
+    if (had) { delete gs[hid]; if (had.ch) cl.removeChannel(had.ch); }
+    if (Object.keys(gs).length >= SB.max) return pub(room, { e: g, why: 'That party is full.' });
+    const n = nextId++, id = 'g' + n, o = gs[id] = { n, tok: g, ch: null, q: [], prev: {}, goneT: -1, up: !tune };
+    if (!tune) { pub(room, { ok: g, you: n }); if (T.onpeer) T.onpeer(id, true); return; }
+    o.ch = chan('pawty:' + code + ':' + g, 'host');
+    o.ch.on('broadcast', { event: 'm' }, ({ payload: p }) => { if (p.l) hostRecv(id, p.l); });
+    // its Presence gone = a closed tab, unless it comes back within SB.grace (tick)
+    o.ch.on('presence', { event: 'leave' }, ({ key }) => { if (key === 'g' && o.goneT < 0) o.goneT = clock; });
+    o.ch.on('presence', { event: 'join' }, ({ key }) => { if (key === 'g') o.goneT = -1; });
+    o.ch.subscribe(st => { if (dead || gs[id] !== o || st !== 'SUBSCRIBED' || o.up) return; o.up = true; pub(o.ch, { ok: n }); if (T.onpeer) T.onpeer(id, true); });
+  }
+  function hostRecv(id, list) {
+    const o = gs[id];
+    for (const s of list) {
+      let m; try { m = JSON.parse(s, J_IN); } catch (e) { continue; }
+      if (m.t === 'bye') return hostDrop(id);
+      if (tune) o.q.push(m); else if (T.onmsg) T.onmsg(m, id);
+    }
+  }
+  function hostDrop(id) {
+    const o = gs[id]; if (!o) return;
+    delete gs[id]; if (o.ch) cl.removeChannel(o.ch);
+    if (T.onpeer) T.onpeer(id, false);
+  }
+  function guestStart() {
+    room = chan('pawty:' + code, 'g');
+    room.on('broadcast', { event: 'm' }, ({ payload: p }) => {
+      if (p.x) return closed();
+      if (p.e === tok) return fail(p.why);
+      if (p.ok === tok) return joined(p.you);
+      if (p.m == null || !me || (p.to != null && p.to !== me)) return;
+      if (p.r) rate = p.r;
+      if (T.onmsg) T.onmsg(JSON.parse(p.m, J_IN), 'host');
+    });
+    room.on('presence', { event: 'sync' }, () => {
+      if ((room.presenceState().host || []).length) { seen = true; hostGoneT = -1; ask(); }
+      else if (seen) { if (hostGoneT < 0) hostGoneT = clock; } else if (noHostT < 0) noHostT = clock;
+    });
+    room.subscribe(st => { if (dead) return; if (st === 'SUBSCRIBED') { roomOk = true; ask(); } else if (bad(st) && !me) fail(NOSRV); });
+    if (!tune) return;
+    up = chan('pawty:' + code + ':' + tok, 'g');
+    up.on('broadcast', { event: 'm' }, ({ payload: p }) => {
+      if (p.ok) return joined(p.ok);
+      if (p.m != null && me && T.onmsg) T.onmsg(JSON.parse(p.m, J_IN), 'host');
+    });
+    up.subscribe(st => { if (dead) return; if (st === 'SUBSCRIBED') { upOk = true; up.track({ at }); ask(); } else if (bad(st) && !me) fail(NOSRV); });
+  }
+  function ask() { if (asked || !roomOk || !seen || (tune && !upOk)) return; asked = true; askT = reT = clock; pub(room, { j: tok }); }
+  function joined(n) { if (me) return; me = n; T.id = 'g' + n; open(); }
+  function closed() { if (dead) return; const cb = T.onpeer; T.close(true); if (cb) cb('host', false); }
+  function flush() { if (!q.length) return; pub(up, { l: q.map(x => x.s) }); q = []; lastF = clock; }
+  // a whole number of batches a second: 3.2/s could put 4 into one second
+  const due = () => clock - lastF >= 1 / Math.max(1, Math.floor(rate));
+  T.send = (m, to) => {
+    if (dead) return;
+    const s = JSON.stringify(m, J_OUT);
+    if (host) {
+      if (!to || to === '*') return pub(room, tune ? { m: s, r: +upRate.toFixed(2) } : { m: s });
+      const o = gs[to]; if (o) { if (tune) pub(o.ch, { m: s }); else pub(room, { to: o.n, m: s }); }
+      return;
+    }
+    if (!me) return;
+    if (!tune) return pub(room, { from: me, m: s });
+    // input with the same buttons as the last one waiting only updates the stick: presses (edges) are all kept
+    const l = q[q.length - 1];
+    if (m.t === 'in' && l && l.m.t === 'in' && l.m.d === m.d && l.m.a === m.a && l.m.b === m.b) q[q.length - 1] = { m, s }; else q.push({ m, s });
+    if (m.t === 'hello' || due()) flush();
+  };
+  // called by netHostTick with the usual gap (1/10 s, 1/15 s in move games): fewer snapshots when many guests share the budget
+  T.snapGap = base => {
+    if (!tune) return base;
+    const G = Object.keys(gs).length, s = Math.min(1 / base, (base < .09 ? SB.down.move : SB.down.one) / (1 + G));
+    upRate = G ? Math.min(30, (SB.budget - (1 + G) * s) / (2 * G)) : 30;
+    return 1 / s;
+  };
+  T.tick = dt => {
+    if (dead) return;
+    clock += dt;
+    if (host) {
+      if (!opened && subAt >= 0 && clock - subAt > 3) open(); // no presence sync came: carry on
+      // replay each guest's batch in order, one button change per frame: the game samples buttons once a frame, so an up
+      // and the next down in the same frame would read as one long hold (a lost press)
+      for (const id in gs) {
+        const o = gs[id];
+        if (o.goneT >= 0 && clock - o.goneT > SB.grace) { hostDrop(id); continue; }
+        while (o.q.length && gs[id]) {
+          const m = o.q.shift(), p = o.prev; let edge = m.t === 'uni' || m.t === 'nav' || m.t === 'pick';
+          if (m.t === 'in' || m.t === 'btn') { edge = !!m.d !== !!p.d || !!m.a !== !!p.a || !!m.b !== !!p.b; o.prev = { d: m.d, a: m.a, b: m.b }; }
+          if (T.onmsg) T.onmsg(m, id);
+          if (edge) break;
+        }
+      }
+      return;
+    }
+    if (hostGoneT >= 0 && clock - hostGoneT > SB.grace) return closed();
+    if (!me && !seen && noHostT >= 0 && clock - noHostT > 2.5) return fail('No party with that code.');
+    if (!me && asked && clock - askT > 8) return fail(NOSRV);
+    if (!me && asked && clock - reT > 2) { reT = clock; pub(room, { j: tok }); } // Broadcast is at-most-once: ask again
+    if (q.length && due()) flush();
+  };
+  T.close = quiet => {
+    if (dead) return;
+    let bye = null;
+    if (!quiet) { if (host) bye = pub(room, { x: 1 }); else if (me) { if (tune) { flush(); bye = pub(up, { l: ['{"t":"bye"}'] }); } else bye = pub(room, { from: me, m: '{"t":"bye"}' }); } }
+    dead = true;
+    const c = cl, end = () => { try { if (c) { c.removeAllChannels(); if (c.realtime) c.realtime.disconnect(); } } catch (e) {} };
+    Promise.resolve(bye).then(end, end); // the goodbye goes out first
+  };
+  sbLoad().then(lib => {
+    if (dead) return;
+    if (!SB_ON && !lib.__fake) return fail('Online play isn\'t set up yet.');
+    cl = lib.createClient(SB_URL || 'https://fake.supabase.co', SB_KEY || 'fake', { auth: { persistSession: false, autoRefreshToken: false }, realtime: { params: { eventsPerSecond: 60 } } });
+    host ? hostStart() : guestStart();
+  }, () => fail(NOSRV));
+  return T;
+}
 function netTransport(code, host) {
-  const url = /^wss?:/.test(NET_Q) ? NET_Q : NET_URL;
-  return url && NET_Q !== 'local' ? wsTransport(url, code, host) : localTransport(code, host);
+  if (NET_Q === 'local') return localTransport(code, host);
+  if (/^wss?:/.test(NET_Q)) return wsTransport(NET_Q, code, host);
+  if (NET_Q === 'sb' || SB_ON) return sbTransport(code, host);
+  return NET_URL ? wsTransport(NET_URL, code, host) : localTransport(code, host);
 }
 function netHost() {
   netLeave(true);
@@ -7897,10 +8072,12 @@ function netSnap(lite) {
 }
 function netHostTick(dt) {
   if (!NET.tr) return;
+  if (NET.tr.tick) NET.tr.tick(dt);
   const live = !!(B || MS);
   if (!live) { if (NET.sentGame) { NET.sentGame = false; netSend({ t: 'snap', s: { screen: SCREEN, PL: [], props: [] } }); netLobby(); } return; }
   // move games send 15 snapshots a second (one-button games and the board 10)
-  NET.sendT += dt; if (NET.sendT < (MS && MS.def.move && MS.phase !== 'ranks' ? 1 / 15 : SNAP_EVERY)) return;
+  const gap = MS && MS.def.move && MS.phase !== 'ranks' ? 1 / 15 : SNAP_EVERY;
+  NET.sendT += dt; if (NET.sendT < (NET.tr.snapGap ? NET.tr.snapGap(gap) : gap)) return;
   NET.sendT = 0; NET.sentGame = true;
   NET.snapN = ((NET.snapN || 0) + 1) % 5;
   netSend({ t: 'snap', s: netSnap(!!(MS && MS.def.move && MS.phase !== 'ranks' && NET.snapN)) });
@@ -7938,6 +8115,7 @@ function deepLerp(a, b, k) {
   return b;
 }
 function netClientTick(dt) {
+  if (NET.tr && NET.tr.tick) NET.tr.tick(dt);
   if (NET.status === 'Looking for the party…' && (NET.helloT += dt) > 6) return netLeave(false, `No party found with the code ${NET.code}.`);
   const key = CFG.slots[0].key;
   // a guest is alone at its screen: WASD + F/G and arrows + K/L both work, plus the first gamepad and the touch stick
@@ -8006,7 +8184,7 @@ function onlineHTML() {
       <div class="row"><button class="btn ghost" data-do="nleave">Leave</button></div></div>`;
   }
   return `<div class="card title"><h1 class="ph">Online party</h1>
-    <p>Preview: play with friends on their own screens. One person hosts, everyone else joins with the room code.</p>${err}
+    <p>${SB_ON ? 'Play' : 'Preview: play'} with friends on their own screens. One person hosts, everyone else joins with the room code.</p>${err}
     <div class="col"><button class="btn" data-do="nhost">🏠 Host a party</button></div>
     <div class="njoin"><input id="netCode" maxlength="4" placeholder="CODE" autocomplete="off" value="${NET.mode === 'local' && NET.code ? NET.code : ''}">
       <input id="netName" maxlength="14" placeholder="Your name" value="${NET.name}">
@@ -9460,7 +9638,7 @@ if (document.fonts && document.fonts.load) {
 } else boot();
 
 // Debug / test hooks
-window.__P = { update, draw, startMG, newGame, setScreen, get B() { return B; }, get MS() { return MS; }, get PL() { return PL; }, get SCREEN() { return SCREEN; }, CFG, MGDEF, PROPS, BS, NET, ACT, SP, CAMU, fn: { hiddenBlock, raccoon, pawWheel, startCatchup, roundMode, ask, doKennel, doShop, stepMove }, ICON, netHost, netJoin, netLeave, deepLerp, netSnap, netApply,
+window.__P = { update, draw, startMG, newGame, setScreen, get B() { return B; }, get MS() { return MS; }, get PL() { return PL; }, get SCREEN() { return SCREEN; }, CFG, MGDEF, PROPS, BS, NET, ACT, SP, CAMU, fn: { hiddenBlock, raccoon, pawWheel, startCatchup, roundMode, ask, doKennel, doShop, stepMove }, ICON, netHost, netJoin, netLeave, deepLerp, sbTransport, SB, netSnap, netApply,
   /* Action mode */ act: { PIN, KD, KL, TS, KEYSETS, MGCARD, MVLV, PMV, ACTG, pmStep, makePlayers, nextMG, mgInMode, mgCtl, devAx, J_OUT } };
 </script>
 </body>
