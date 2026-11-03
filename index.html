@@ -470,10 +470,14 @@ try { const s = JSON.parse(localStorage.getItem('schiffyPawty')); if (s && s.slo
 CFG.slots.forEach((sl, i) => { if (PUP[sl.pup] && CFG.slots.findIndex(o => o.pup === sl.pup) === i) return; const f = PUPS.find(p => !CFG.slots.some(o => o.pup === p.id)); sl.pup = (f || PUPS[i]).id; });
 // Action mode: keyboard players get a key set each (KEYSETS: WASD / arrows / numpad), slot i starts on set i
 if (CFG.mode !== 'action') CFG.mode = 'simple';
-CFG.slots.forEach((s, i) => { if (!(s.kset >= 0 && s.kset < 3)) s.kset = i < 3 ? i : 0; });
+CFG.slots.forEach((s, i) => { if (!(s.kset >= 0 && s.kset < 3 || s.kset === 3 && s.keys)) s.kset = i < 3 ? i : 0; });
 CFG.slots.forEach(s => { if (s.type === 'online') s.type = 'off'; delete s.peer; delete s.name; }); // online seats never outlive the room
 const saveCfg = () => { try { localStorage.setItem('schiffyPawty', JSON.stringify(CFG)); } catch (e) {} };
-const keyName = c => !c ? '—' : c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ').replace(/^Arrow/, '');
+// key codes as players read them; mouse buttons are 'Mouse0' (left) / 'Mouse1' (middle) / 'Mouse2' (right)
+const KEY_NM = { Mouse0: 'L-Click', Mouse1: 'M-Click', Mouse2: 'R-Click', ShiftLeft: 'L-Shift', ShiftRight: 'R-Shift', ControlLeft: 'L-Ctrl', ControlRight: 'R-Ctrl',
+  AltLeft: 'L-Alt', AltRight: 'R-Alt', NumpadDecimal: 'Num .', Period: '.', Comma: ',', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']',
+  Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', CapsLock: 'Caps', Backspace: 'Bksp' };
+const keyName = c => !c ? '—' : KEY_NM[c] || c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ').replace(/^Arrow/, '');
 
 /* ===== Sound: procedural SFX + music (WebAudio, everything synthesized, off by default) =====
    Bus: sfx + music gains -> compressor -> master -> analyser -> out -> speakers. sfx(name, arg) plays one effect,
@@ -673,14 +677,30 @@ const soundBtns = () => `<button class="btn ghost" data-do="sound">${CFG.sound ?
 const KD = new Set(), TD = new Set(), KL = new Map(), TL = new Map(); // held keys / touch pads, and latched fresh taps
 const UNI = { press: false, nav: 0 };
 const PIN = [];
-let REBIND = -1;
-addEventListener('keydown', e => {
-  if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Enter' && e.target.id === 'netCode') ACT.njoin(); return; }
+// rebinding in setup: REBIND = the slot whose one Simple-mode key is being set; RBK = { i, step, keys, err } while an
+// Action-mode slot sets its own six keys one after another (KS_DIRS). Keys and mouse buttons both count, Esc cancels.
+let REBIND = -1, RBK = null, rbMouseT = -1e9;
+function rebindTake(code) {
   if (REBIND >= 0) {
-    e.preventDefault();
-    if (e.code !== 'Escape') { CFG.slots[REBIND].key = e.code; CFG.slots[REBIND].dev = 'key'; saveCfg(); }
+    if (code !== 'Escape') { CFG.slots[REBIND].key = code; CFG.slots[REBIND].dev = 'key'; saveCfg(); }
     REBIND = -1; renderSetup(); return;
   }
+  const r = RBK; if (!r) return;
+  if (code === 'Escape') { RBK = null; renderSetup(); return; }
+  const mine = KS_DIRS.find(d => r.keys[d] === code), other = CFG.slots.findIndex((s, j) => j !== r.i && s.type === 'human' && s.dev === 'key' && KS_DIRS.some(d => slotKS(s)[d] === code));
+  r.err = KS_MENU.includes(code) ? `${keyName(code)} is the menu key, pick another` : mine ? `${keyName(code)} is already ${KS_WORD[mine]}` : other >= 0 ? `${keyName(code)} is P${other + 1}'s key` : '';
+  if (!r.err) {
+    r.keys[KS_DIRS[r.step]] = code;
+    if (++r.step >= KS_DIRS.length) { const s = CFG.slots[r.i]; s.keys = r.keys; s.kset = 3; s.dev = 'key'; RBK = null; saveCfg(); }
+  }
+  renderSetup();
+}
+// mouse buttons while rebinding: taken as the key, and the click / context menu that follows is swallowed
+addEventListener('mousedown', e => { if (REBIND < 0 && !RBK) return; e.preventDefault(); e.stopPropagation(); rbMouseT = performance.now(); rebindTake('Mouse' + e.button); }, true);
+for (const ev of ['click', 'contextmenu', 'auxclick']) addEventListener(ev, e => { if (performance.now() - rbMouseT < 800) { e.preventDefault(); e.stopPropagation(); } }, true);
+addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Enter' && e.target.id === 'netCode') ACT.njoin(); return; }
+  if (REBIND >= 0 || RBK) { e.preventDefault(); if (!e.repeat) rebindTake(e.code); return; }
   if (!e.repeat) {
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') UNI.press = true;
     const nav = !arrowsTaken();
@@ -714,6 +734,15 @@ cv.addEventListener('pointermove', e => {
 });
 cv.addEventListener('pointerup', e => { const d = CAMU.drag; if (!d || e.pointerId !== d.id) return; CAMU.drag = null; if (!d.moved && NET.mode !== 'client') UNI.press = true; });
 cv.addEventListener('pointercancel', () => { CAMU.drag = null; });
+// mouse buttons as keys ('Mouse0' left, 'Mouse2' right: the default Action / Push of the WASD set). Only presses on the
+// game canvas, and only in a minigame or the turn-order die: elsewhere on the board a click is the shared confirm and a
+// drag turns the camera. Touch taps also fire mouse events, so those are skipped for a second after a touch.
+let lastTouch = -1e9;
+addEventListener('touchstart', () => { lastTouch = performance.now(); }, { capture: true, passive: true });
+const mouseKeys = () => SCREEN === 'mg' || SCREEN === 'board' && B && B.phase === 'order';
+cv.addEventListener('mousedown', e => { if (performance.now() - lastTouch < 1000 || !mouseKeys()) return; const c = 'Mouse' + e.button; KD.add(c); KL.set(c, performance.now()); });
+addEventListener('mouseup', e => KD.delete('Mouse' + e.button));
+cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => { if (SCREEN !== 'board' || !B) return; e.preventDefault(); CAMU.used = true; CAMU.zoom = clamp(CAMU.zoom * Math.exp(e.deltaY * .0012), .45, 1.8); }, { passive: false });
 for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { NET.ptr = false; });
 function padDown(i) {
@@ -727,20 +756,30 @@ function devDown(pl, ax) {
   if (pl.remote) { const d = !!(NET.rdown[pl.remote] || NET.rlatch[pl.remote]); NET.rlatch[pl.remote] = false; return d; }
   // local taps are latched the same way: a key tapped faster than one frame (down + up between two updates) was lost
   const kl = pl.key && latched(KL, pl.key), tl = latched(TL, pl.i);
-  return kl || tl || (pl.key && KD.has(pl.key)) || TD.has(pl.i) || padDown(pl.pad) || !!(pl.kset >= 0 && ax && (ax.a || ax.b));
+  return kl || tl || (pl.key && KD.has(pl.key)) || TD.has(pl.i) || padDown(pl.pad) || !!(pl.ks && ax && (ax.a || ax.b));
 }
 // a latched press counts once, and only if it is fresh (a tap on another screen must not leak into the game)
 function latched(map, k) { const t = map.get(k); if (t == null) return false; map.delete(k); return performance.now() - t < 250; }
 /* Action mode (2026-10-30): every slot also yields a move vector + two buttons. PIN[i] = { d, p, r, h, lh (the one
    button, unchanged), mx, my (|m| <= 1, +x = right, +my = down the screen = towards the minigame camera), a, b (action /
-   push held), ap, bp (fresh presses) }. One-button games keep reading d / p. Keyboards use a KEYSETS entry (Action mode
-   only: the single setup key stays Simple mode's), gamepads the left stick or D-pad (A = action, B or X = push), touch
-   the on-screen stick (TS). Diagonals are normalised, so keys and sticks share one top speed. */
+   push held), ap, bp (fresh presses) }. One-button games keep reading d / p. Keyboards use the slot's key set (Action
+   mode only: the single setup key stays Simple mode's): a KEYSETS preset or the player's own keys (kset 3, slot.keys),
+   gamepads the left stick or D-pad (A = action, B or X = push), touch the on-screen stick (TS). Diagonals are
+   normalised, so keys and sticks share one top speed.
+   2026-11-04 (playtest: "F and G are hard to press while moving"): WASD's Action / Push are the left / right mouse
+   buttons (was F / G), the arrows' are right Shift / right Ctrl next to them (was K / L), and every player can set
+   their own six keys in setup (✎). */
 const KEYSETS = [
-  { name: 'WASD', u: 'KeyW', l: 'KeyA', d: 'KeyS', r: 'KeyD', a: 'KeyF', b: 'KeyG' },
-  { name: 'Arrows', u: 'ArrowUp', l: 'ArrowLeft', d: 'ArrowDown', r: 'ArrowRight', a: 'KeyK', b: 'KeyL' },
+  { name: 'WASD', u: 'KeyW', l: 'KeyA', d: 'KeyS', r: 'KeyD', a: 'Mouse0', b: 'Mouse2' },
+  { name: 'Arrows', u: 'ArrowUp', l: 'ArrowLeft', d: 'ArrowDown', r: 'ArrowRight', a: 'ShiftRight', b: 'ControlRight' },
   { name: 'Numpad', u: 'Numpad8', l: 'Numpad4', d: 'Numpad5', r: 'Numpad6', a: 'Numpad0', b: 'NumpadDecimal' },
 ];
+const KS_DIRS = ['u', 'l', 'd', 'r', 'a', 'b'], KS_WORD = { u: 'Up', l: 'Left', d: 'Down', r: 'Right', a: 'Action', b: 'Push' };
+const KS_MENU = ['Space', 'Enter', 'NumpadEnter', 'Tab']; // the shared confirm: as a player's key, one tap would also pick in board menus
+const slotKS = s => s.kset === 3 && s.keys ? Object.assign({ name: 'My keys' }, s.keys) : KEYSETS[s.kset] || KEYSETS[0];
+// the four move keys as one label: "W A S D", "↑ ← ↓ →", "Num 8456", or the player's own
+const ARW = { ArrowUp: '↑', ArrowLeft: '←', ArrowDown: '↓', ArrowRight: '→' };
+const moveName = ks => { const c = [ks.u, ks.l, ks.d, ks.r]; return c.every(k => /^Numpad\d$/.test(k)) ? 'Num ' + c.map(k => k.slice(6)).join('') : c.map(k => ARW[k] || keyName(k)).join(' '); };
 const AX0 = { mx: 0, my: 0, a: false, b: false };
 const TS = {}; // touch stick per player index (-1 = an online guest's own): { mx, my, a, b, al, bl }
 function deadzone(x, y, dz = .2) { const m = Math.hypot(x, y); if (m < dz) return [0, 0]; const k = Math.min(1, (m - dz) / (1 - dz)) / m; return [x * k, y * k]; }
@@ -765,7 +804,7 @@ function devAx(pl) {
     NET.rla[pl.remote] = NET.rlb[pl.remote] = false; return normAx(o);
   }
   const o = { mx: 0, my: 0, a: false, b: false };
-  if (pl.kset >= 0 && KEYSETS[pl.kset]) addAx(o, keyAx(KEYSETS[pl.kset]));
+  if (pl.ks) addAx(o, keyAx(pl.ks));
   addAx(o, padAx(pl.pad)); addAx(o, touchAx(pl.i));
   return normAx(o);
 }
@@ -780,15 +819,20 @@ function stepInput(list, dt) {
   }
 }
 const NOIN = { d: false, p: false, r: false, h: 0, lh: 0, mx: 0, my: 0, a: false, b: false, ap: false, bp: false };
-const btnLabel = pl => NET.mode === 'client' ? (pl.remote === NET.me ? 'YOU' : pl.cpu ? 'CPU' : '🌐') : pl.cpu ? 'CPU' : pl.remote ? '🌐' : pl.pad >= 0 ? `🎮${pl.pad + 1}` : pl.kset >= 0 && KEYSETS[pl.kset] ? keyName(KEYSETS[pl.kset].a) : pl.key ? keyName(pl.key) : 'tap';
-// Action-mode controls of one player, for the intro cards: [move, action, push]
+const btnLabel = pl => NET.mode === 'client' ? (pl.remote === NET.me ? 'YOU' : pl.cpu ? 'CPU' : '🌐') : pl.cpu ? 'CPU' : pl.remote ? '🌐' : pl.pad >= 0 ? `🎮${pl.pad + 1}` : pl.ks ? keyName(pl.ks.a) : pl.key ? keyName(pl.key) : 'tap';
+// an online guest plays alone at its screen: its own keys if P1 set some on this device, else WASD and the arrows both work
+const guestKS = () => { const s = CFG.slots[0]; return s.dev === 'key' && s.kset === 3 && s.keys ? slotKS(s) : null; };
+// Action-mode controls of one player, for the intro cards: { mv: move label, a / b: action / push labels, ac / bc: their
+// key codes (null = not a key), mk: the 4 move codes (null = a stick), who: 'cpu' | 'net' | '' }
 function ctlOf(pl) {
-  if (NET.mode === 'client' && pl.remote === NET.me) return TOUCH ? ['Stick', 'A', 'B'] : ['WASD / stick', 'F', 'G'];
-  if (pl.cpu) return ['CPU', '', ''];
-  if (pl.remote) return ['🌐 Online', '', ''];
-  if (pl.pad >= 0) return [`🎮${pl.pad + 1} stick`, 'A', 'B'];
-  if (pl.kset >= 0) { const k = KEYSETS[pl.kset]; return [k.name === 'Arrows' ? '↑ ← ↓ →' : k.name === 'Numpad' ? 'Num 8456' : 'W A S D', keyName(k.a), keyName(k.b)]; }
-  return ['Stick', 'A', 'B'];
+  const stick = (mv, a = 'A', b = 'B') => ({ mv, a, b, ac: null, bc: null, mk: null, who: '' });
+  const keys = ks => ({ mv: moveName(ks), a: keyName(ks.a), b: keyName(ks.b), ac: ks.a, bc: ks.b, mk: [ks.u, ks.l, ks.d, ks.r], who: '' });
+  if (NET.mode === 'client' && pl.remote === NET.me) return TOUCH ? stick('Stick') : keys(guestKS() || KEYSETS[0]);
+  if (pl.cpu) return { mv: 'CPU', a: '', b: '', ac: null, bc: null, mk: null, who: 'cpu' };
+  if (pl.remote) return { mv: '🌐 Online', a: '', b: '', ac: null, bc: null, mk: null, who: 'net' };
+  if (pl.pad >= 0) return stick(`🎮${pl.pad + 1} stick`);
+  if (pl.ks) return keys(pl.ks);
+  return stick('Stick');
 }
 // Gamepads join in setup by pressing A: the first free seat becomes that pad's player (Action and Simple alike)
 const PADJ = [];
@@ -807,7 +851,7 @@ function padJoin() {
   }
 }
 // arrows also steer P2 in Action mode: then they don't move the board's menu selection for whoever's turn it is
-const arrowsTaken = () => CFG.mode === 'action' && CFG.slots.some(s => s.type === 'human' && s.dev === 'key' && s.kset === 1);
+const arrowsTaken = () => CFG.mode === 'action' && CFG.slots.some(s => s.type === 'human' && s.dev === 'key' && KS_DIRS.some(d => ARW[slotKS(s)[d]]));
 
 /* ===== 2D HUD helpers (drawn on #cv over the 3D view) ===== */
 function rr(x, y, w, h, r) {
@@ -3629,6 +3673,7 @@ function makePlayers() {
     i: k, slot: i, pup: s.pup, name: PUP[s.pup].name, col: SLOT_COL[i],
     cpu: s.type === 'cpu' || (s.type === 'online' && !s.peer), remote: s.type === 'online' && s.peer || null, tag: s.name || '',
     key: s.dev === 'key' && CFG.mode !== 'action' ? s.key : null, kset: s.dev === 'key' && CFG.mode === 'action' ? s.kset : -1,
+    ks: s.dev === 'key' && CFG.mode === 'action' && s.type === 'human' ? slotKS(s) : null,
     pad: s.dev.startsWith('pad') ? +s.dev[3] : -1, bot: false,
     treats: 10, bones: 0, items: [], pos: 0, daze: false, dbl: false, side: null, badges: [], fullPaws: 0, lucky: false,
     st: { mg: 0, earned: 0, mud: 0, rent: 0, moved: 0, spent: 0, stormy: 0, wheel: 0, lucky: 0 },
@@ -5128,7 +5173,11 @@ function startMG(id, ps, onDone, opts = {}) {
   ps.forEach(p => { p.bot = false; });
   setScreen('mg');
 }
-const MG_WAIT = 25; // seconds before a minigame intro starts by itself
+// A minigame starts only when every real player has readied (2026-11-04, playtest: "it should require all players to be
+// ready", it used to start by itself after 25 s). The one exception: an online guest who still hasn't readied
+// MG_WAIT_NET s after everyone else did (idle or gone) doesn't hold the room up forever.
+const MG_WAIT_NET = 45;
+const mgReadyKey = (m, s) => m.def.move ? s.ap : s.p; // move games ready on Action, so a practice shove doesn't ready you
 function updateMG(dt) {
   const m = MS; m.t += dt;
   // move games' bots steer themselves ({mx, my, a, b}, their own reaction model in pmBot); one-button bots go through botEase
@@ -5141,13 +5190,14 @@ function updateMG(dt) {
   if (m.def.practice && m.phase === 'intro') m.def.practice(m.st, dt, m.I);
   if (m.def.practice && m.phase === 'count' && !m.st.reset) { m.st.reset = true; pmReset(m.st); }
   if (m.phase === 'intro') {
-    m.I.forEach((s, k) => { if (s.p && !m.ready[k]) { m.ready[k] = true; beep(660, .06); } });
+    m.I.forEach((s, k) => { if (mgReadyKey(m, s) && m.t > .4 && !m.ready[k]) { m.ready[k] = true; beep(660, .06); } });
     // Space / Enter / a click only readies a lone local player (it used to start the game for everyone); with several
-    // people each one presses their own button. Starts by itself after MG_WAIT s (shown for the last 10): an idle or
-    // disconnected online guest must not hold everyone up.
+    // people each one presses their own button
     const loc = m.ps.map((p, k) => k).filter(k => !m.ps[k].cpu && !m.ps[k].remote);
     if (UNI.press && m.t > .4 && loc.length === 1 && !m.ready[loc[0]]) { m.ready[loc[0]] = true; beep(660, .06); }
-    if ((m.ready.every(Boolean) && m.t > 1.4) || m.t > MG_WAIT) { m.phase = 'count'; m.t = 0; }
+    // st.nw = seconds only online guests have been missing (state, so guests see the countdown too)
+    m.st.nw = m.ps.every((p, k) => m.ready[k] || p.remote) && !m.ready.every(Boolean) ? (m.st.nw || 0) + dt : 0;
+    if ((m.ready.every(Boolean) && m.t > 1.4) || m.st.nw > MG_WAIT_NET) { m.phase = 'count'; m.t = 0; }
   } else if (m.phase === 'count') {
     if (m.t >= 2.4) { m.phase = 'play'; m.t = 0; }
   } else if (m.phase === 'play') {
@@ -7268,6 +7318,7 @@ function wrapLeft(s, x, y, maxW, size, lh, col = INK, maxLines = 3) {
 }
 // a toy keycap: down = 0..1
 function keyCap(x, y, down, label, col = '#ffcf3d') {
+  if (/^[LR]-Click$/.test(label)) return mouseGlyph(x, y, label[0] === 'R' ? 1 : 0, down, col);
   rr(x - 46, y - 18, 92, 52, 14); g.fillStyle = INK; g.fill();
   const dy = down * 9;
   rr(x - 46, y - 28 + dy, 92, 50, 14); g.fillStyle = col; g.fill(); g.lineWidth = 4; g.strokeStyle = INK; g.stroke();
@@ -7353,69 +7404,103 @@ function mgIntroCard(m) {
       T(m.ready[k] ? '✔ Ready' : `Press ${btnLabel(p)}`, x, 550, 16, m.ready[k] ? '#46c96b' : INK, 'center', { stroke: false, w: 600 });
     });
   }
-  const left = Math.ceil(MG_WAIT - m.t);
-  T(left <= 10 ? `Everyone press your button when ready · Starts by itself in ${left} s` : 'Everyone press your button when ready · CPUs are always ready',
-    W / 2, 596, 15, left <= 10 ? '#d9480f' : '#8a7a90', 'center', { stroke: false, w: left <= 10 ? 700 : 500 });
+  const [rl, rc] = readyLine(m, 'press your own button');
+  T(rl, W / 2, 596, 15, rc, 'center', { stroke: false, w: 700 });
   g.restore();
 }
+// the line under the ready row: who the game is waiting for (it starts only when every real player is ready)
+function readyLine(m, how) {
+  const wait = m.ps.filter((p, k) => !m.ready[k]), left = MG_WAIT_NET - (m.st.nw || 0);
+  if (!wait.length) return ['Everyone is ready!', '#2f9e55'];
+  if (m.st.nw > 0 && left <= 20) return [`Waiting for ${wait.map(pTag).join(', ')} online · starting without them in ${Math.ceil(left)} s`, '#d9480f'];
+  return [`Waiting for ${wait.map(pTag).join(', ')} · ${how} when you're ready · starts when everyone is`, '#7a6a80'];
+}
 /* Action-mode intro: a slim card at the top + a ready strip at the bottom, so the arena stays visible and everyone can
-   run around and shove (practice) while the others get ready. Each player's chip shows THEIR controls. */
-function moveDemo(x, y, w, h, t, c, bl) { /* bl: the B button's own label (def.ctlLab), else Push + BONK! */
+   run around and shove (practice) while the others get ready. 2026-11-04 (playtest: "make sure the instructions show
+   clearly which buttons to hit"): the card shows all three controls with THIS game's job for each (MGCARD act / aw /
+   bw, Action greyed when the game doesn't use it), and every player's chip lists their own keys with those words. */
+// a mouse with its left or right button lit (side 0 / 2); down = 0..1
+function mouseGlyph(x, y, side, down, col = '#ffcf3d', s = 1) {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  rr(-21, -26, 42, 60, 20); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 3; g.strokeStyle = INK; g.stroke();
+  g.save(); rr(-21, -26, 42, 60, 20); g.clip();
+  g.fillStyle = col; g.globalAlpha = .55 + .45 * down; g.fillRect(side ? 0 : -21, -26, 21, 24); g.globalAlpha = 1;
+  g.beginPath(); g.moveTo(0, -26); g.lineTo(0, -2); g.moveTo(-21, -2); g.lineTo(21, -2); g.stroke(); g.restore();
+  if (down) { g.strokeStyle = col; g.lineWidth = 3; for (let i = -1; i <= 1; i++) { const a = -Math.PI / 2 + i * .5 + (side ? .55 : -.55); g.beginPath(); g.moveTo(Math.cos(a) * 34, Math.sin(a) * 34 - 6); g.lineTo(Math.cos(a) * 44, Math.sin(a) * 44 - 6); g.stroke(); } }
+  g.restore();
+}
+// one control: a mouse button, else a keycap sized to its label; returns nothing, centred on (x, y)
+function ctlCap(x, y, code, label, down, col) {
+  if (/^Mouse[02]$/.test(code || '')) return mouseGlyph(x, y + 2, code === 'Mouse2' ? 1 : 0, down, col, .82);
+  g.font = cfont(label.length > 2 ? 15 : 20, 700, true); const w = Math.max(48, g.measureText(label).width + 26);
+  rr(x - w / 2, y - 12, w, 38, 11); g.fillStyle = INK; g.fill();
+  rr(x - w / 2, y - 19 + down * 6, w, 36, 11); g.fillStyle = col; g.fill(); g.lineWidth = 3; g.strokeStyle = INK; g.stroke();
+  T(label, x, y - 1 + down * 6, label.length > 2 ? 15 : 20, INK, 'center', { stroke: false, d: true });
+}
+// the controls box: Move (4 caps or a stick) | Action | Push, each with this game's word under it
+function moveDemo(x, y, w, h, t, c, aw, bw) {
   rr(x, y, w, h, 20); g.fillStyle = '#f3ecff'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(59,42,69,.25)'; g.stroke();
-  const cx = x + 66, cy = y + h / 2 + 4, ph = Math.floor(t / .45) % 4, dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-  // movement: four little caps (or a stick), the lit one cycles
-  if (/stick|Stick/.test(c[0])) {
+  const cx = x + 64, cy = y + h / 2 + 2, ph = Math.floor(t / .45) % 4, dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  if (!c.mk) {
     ell(cx, cy, 36, 36, '#fff', INK, 3); const [dx, dy] = dirs[ph]; ell(cx + dx * 14, cy + dy * 14, 17, 17, '#ffcf3d', INK, 3);
   } else {
-    const lab = c[0].split(' ').length === 4 ? c[0].split(' ') : ['W', 'A', 'S', 'D'];
+    const lab = c.mk.map(k => ARW[k] || keyName(k));
     [[0, -1, lab[0]], [-1, 0, lab[1]], [0, 0, lab[2]], [1, 0, lab[3]]].forEach(([dx, dy, l], i) => {
       const on = [0, 3, 2, 1][ph] === i; rr(cx - 17 + dx * 38, cy - 34 + (dy + 1) * 36 - (on ? 0 : 3), 34, 32, 8); g.fillStyle = on ? '#ffcf3d' : '#fff'; g.fill(); g.lineWidth = 3; g.strokeStyle = INK; g.stroke();
-      T(l, cx + dx * 38, cy - 18 + (dy + 1) * 36 - (on ? 0 : 3), l.length > 1 ? 13 : 17, INK, 'center', { stroke: false, d: true });
+      T(l, cx + dx * 38, cy - 18 + (dy + 1) * 36 - (on ? 0 : 3), l.length > 1 ? 12 : 17, INK, 'center', { stroke: false, d: true });
     });
   }
-  T('Move', cx, y + 18, 15, '#7a4fc0', 'center', { stroke: false, d: true });
-  // push: its cap bonks every 1.4 s
-  const bx = x + w - 54, p = t % 1.4, dn = p > .7 && p < .86 ? 1 : 0;
-  rr(bx - 30, cy - 12, 60, 40, 12); g.fillStyle = INK; g.fill();
-  rr(bx - 30, cy - 20 + dn * 7, 60, 38, 12); g.fillStyle = '#ff8fb1'; g.fill(); g.lineWidth = 3; g.strokeStyle = INK; g.stroke();
-  T(c[2] || 'B', bx, cy - 2 + dn * 7, c[2] && c[2].length > 2 ? 13 : 20, INK, 'center', { stroke: false, d: true });
-  T(bl || 'Push', bx, y + 18, 15, '#ff5c8a', 'center', { stroke: false, d: true });
-  if (!bl && (dn || p > .86 && p < 1.1)) T('BONK!', bx, cy + 44, 16, '#ff5c8a', 'center', { lw: 4, d: true });
+  T('MOVE', cx, y + 16, 14, '#7a4fc0', 'center', { stroke: false, d: true });
+  // Action and Push take turns pressing (Action greyed when this game doesn't use it)
+  const p = t % 2.4, used = !!aw, ad = used && p > .4 && p < .62 ? 1 : 0, bd = p > 1.6 && p < 1.82 ? 1 : 0;
+  [[x + w - 150, c.ac, c.a, ad, used ? '#ffcf3d' : '#ddd3e2', 'ACTION', used ? aw : 'not used', used ? '#c27c00' : '#9a8ca0'], [x + w - 58, c.bc, c.b, bd, '#ff8fb1', 'PUSH', bw, '#ff5c8a']]
+    .forEach(([bx, code, l, dn, col, head, word, wc]) => {
+      T(head, bx, y + 16, 14, wc, 'center', { stroke: false, d: true });
+      ctlCap(bx, cy - 8, code, l || '?', dn, col);
+      if (/^Mouse/.test(code || '')) T(code === 'Mouse2' ? 'Right click' : 'Left click', bx, y + h - 36, 11, '#7a6a80', 'center', { stroke: false, w: 700 });
+      T(word, bx, y + h - 17, 15, wc, 'center', { stroke: false, d: true });
+    });
 }
 function mgIntroMove(m, card) {
   const pop = easeBack(Math.min(1, m.t / .35));
   g.save(); g.globalAlpha = Math.min(1, m.t / .2);
   g.translate(W / 2, 40); g.scale(.85 + .15 * pop, .85 + .15 * pop); g.translate(-W / 2, -40);
-  panel2D(196, 52, 888, 232, 30, 'rgba(255,250,242,.96)', INK, 5);
+  panel2D(150, 52, 980, 250, 30, 'rgba(255,250,242,.96)', INK, 5);
   const tm = m.st.teams, tg = m.opts.duel ? '⚔️ Duel ⚔️' : tm && m.opts.mode === 'pack' ? '🐺 1 vs Pack 🐾' : tm ? '☀️ Team round ⛈️' : '🎮 Action game';
   g.font = cfont(18); const tw = g.measureText(tg).width + 50; rr(W / 2 - tw / 2, 36, tw, 32, 16); g.fillStyle = m.opts.duel ? '#ff8a1f' : tm ? '#3fa7ff' : '#46c96b'; g.fill(); g.lineWidth = 3; g.strokeStyle = INK; g.stroke(); T(tg, W / 2, 52, 18, '#fff', 'center', { lw: 4 });
-  T(m.def.name, W / 2, 98, 44, '#ff5c8a', 'center', { lw: 7 });
+  T(m.def.name, W / 2, 96, 42, '#ff5c8a', 'center', { lw: 7 });
   const me = NET.mode === 'client' ? m.ps.find(p => p.remote === NET.me) : m.ps.find(p => !p.cpu && !p.remote);
   // def.ctlLab(s, k) = [action, push, side] words for pup k (games where sides have different controls, e.g. Giant Brawl)
   const lab = k => m.def.ctlLab ? m.def.ctlLab(m.st, k) : null, ml = me ? lab(m.ps.indexOf(me)) : null;
-  moveDemo(222, 126, 236, 142, m.t, me ? ctlOf(me) : ['W A S D', 'F', 'G'], ml && ml[1][0].toUpperCase() + ml[1].slice(1));
-  const rows = card.rows || [['trophy', 'Goal', card.goal, '#ff8a1f'], ['shoe', 'Move', card.press, '#7a4fc0'], ['paw', 'Push', card.push, '#ff5c8a'], ['star', 'Score', card.score, '#3fa7ff']];
-  rows.forEach(([ic, lab, txt, col], i) => {
-    const ry = 132 + i * 36; ell(494, ry + 12, 15, 15, '#fff', col, 3); ICON.draw(g, ic, 494, ry + 12, 19);
-    T(lab.toUpperCase(), 518, ry + 12, 13, col, 'left', { stroke: false, d: true });
-    wrapLeft(txt, 572, ry + 12, 490, 17, 20, INK, 1);
+  const cap = s => s && s[0].toUpperCase() + s.slice(1), words = k => { const l = lab(k); return l ? [cap(l[0]), cap(l[1])] : [card.aw || '', card.bw || 'Shove']; };
+  const [aw, bw] = words(me ? m.ps.indexOf(me) : -1);
+  moveDemo(176, 124, 330, 164, m.t, me ? ctlOf(me) : ctlOf({ ks: KEYSETS[0] }), aw, bw);
+  const rows = card.rows || [['trophy', 'Goal', card.goal, '#ff8a1f'], ['shoe', 'Move', card.press, '#7a4fc0'],
+    ['bolt', 'Action', card.act || 'Not used in this game. Press it when you are ready.', card.act ? '#c27c00' : '#9a8ca0'], ['paw', 'Push', card.push, '#ff5c8a'], ['star', 'Score', card.score, '#3fa7ff']];
+  const rh = rows.length > 4 ? 30 : 36;
+  rows.forEach(([ic, lb, txt, col], i) => {
+    const ry = 130 + i * rh; ell(542, ry + 12, 14, 14, '#fff', col, 3); ICON.draw(g, ic, 542, ry + 12, 18);
+    T(lb.toUpperCase(), 564, ry + 12, 13, col, 'left', { stroke: false, d: true });
+    wrapLeft(txt, 632, ry + 12, 480, 16, 19, INK, 1);
   });
-  if (tm && !m.def.only) T(m.def.teamTxt || 'Played as teams: the better average place wins.', 572, 276, 13, '#7a4fc0', 'left', { stroke: false, w: 600 });
-  else if (tm && m.def.target) T(`🎯 ${m.def.target(m.st)}`, 572, 276, 13, '#d9480f', 'left', { stroke: false, w: 700 });
+  if (tm && !m.def.only) T(m.def.teamTxt || 'Played as teams: the better average place wins.', 632, 288, 13, '#7a4fc0', 'left', { stroke: false, w: 600 });
+  else if (tm && m.def.target) T(`🎯 ${m.def.target(m.st)}`, 632, 288, 13, '#d9480f', 'left', { stroke: false, w: 700 });
   g.restore();
-  // bottom strip: who is ready + their controls
-  const n = m.n, sp = Math.min(190, 1180 / n), y = H - 64;
+  // bottom strip: who is ready + their own controls with this game's words ("L-Click Dash · R-Click Shove")
+  const n = m.n, sp = Math.min(200, 1200 / n), y = H - 64;
   g.save(); g.globalAlpha = Math.min(1, m.t / .2);
   panel2D(W / 2 - n * sp / 2 - 16, y - 34, n * sp + 32, 92, 24, 'rgba(255,250,242,.94)', INK, 4);
   m.ps.forEach((p, k) => {
-    const x = W / 2 + (k - (n - 1) / 2) * sp, bob = m.ready[k] ? Math.sin(NOW * 10 + k) * 3 : 0, c = ctlOf(p);
-    faceAt(p, x - sp / 2 + 34, y + 2 + bob, 20);
-    T(m.ready[k] ? '✔ Ready' : `Press ${c[1] || btnLabel(p)}`, x - sp / 2 + 62, y - 10, 15, m.ready[k] ? '#46c96b' : INK, 'left', { stroke: false, w: 700 });
-    const l = lab(k);
-    T(p.cpu ? (l && l[2] ? `CPU · ${l[2]}` : 'CPU') : c[2] ? (l ? `${c[1]} ${l[0]} · ${c[2]} ${l[1]}` : `${c[0]} · ${c[2]} push`) : c[0], x - sp / 2 + 62, y + 12, 12, '#7a6a80', 'left', { stroke: false, w: 600 });
+    const x = W / 2 + (k - (n - 1) / 2) * sp, bob = m.ready[k] ? Math.sin(NOW * 10 + k) * 3 : 0, c = ctlOf(p), [a1, b1] = words(k), l = lab(k);
+    faceAt(p, x - sp / 2 + 32, y + 2 + bob, 20);
+    const tx = x - sp / 2 + 58;
+    T(m.ready[k] ? '✔ Ready' : c.who ? '…' : `${c.a} = ready`, tx, y - 14, 15, m.ready[k] ? '#2f9e55' : INK, 'left', { stroke: false, w: 700 });
+    if (c.who) { T(c.who === 'cpu' ? (l && l[2] ? `CPU · ${l[2]}` : 'CPU') : c.mv, tx, y + 8, 12, '#7a6a80', 'left', { stroke: false, w: 600 }); return; }
+    T(`Move ${c.mv}`, tx, y + 6, 12, '#7a6a80', 'left', { stroke: false, w: 600 });
+    T(`${c.a} ${a1 || 'ready'} · ${c.b} ${b1}`, tx, y + 22, 12, '#7a6a80', 'left', { stroke: false, w: 600 });
   });
-  const left = Math.ceil(MG_WAIT - m.t);
-  T(left <= 10 ? `Try it out: run and shove! · Starts by itself in ${left} s` : 'Try it out: run and shove! Press your action button when ready', W / 2, y + 44, 13, left <= 10 ? '#d9480f' : '#8a7a90', 'center', { stroke: false, w: 600 });
+  const [rl, rc] = readyLine(m, 'press Action');
+  T(`Try it out: run and shove! · ${rl}`, W / 2, y + 44, 13, rc, 'center', { stroke: false, w: 700 });
   g.restore();
 }
 // while it runs: a small hint pill under the game's name (fades to half after 6 s)
@@ -9583,15 +9668,16 @@ MGDEF.cannon = {
   },
 };
 Object.assign(MGCARD, {
+  /* press = the Move row; act = what Action does (none = greyed "not used"); aw / bw = one word each for Action / Push */
   asumo: { ic: 'bolt', btn: 'move', ctl: 'move', goal: 'Be the last pup on the raft.', press: 'Run around the raft.', push: 'Shove a pup into the pool!', score: 'Fall in and you are out. The raft shrinks.', tip: 'Shove them off the edge!' },
-  acush: { ic: 'note', btn: 'move', ctl: 'move', goal: 'Sit on a cushion when the music stops.', press: 'Run! When the music stops, run onto a cushion.', push: 'Shove a sitter off its cushion.', score: 'No cushion when the timer ends = out.', tip: 'Music stops: grab a cushion!' },
-  atag: { ic: '💥', btn: 'move', ctl: 'move', goal: "Don't hold the toy when it pops.", press: 'Got the toy? Bump a pup to pass it.', push: 'Shove the holder away from you.', score: 'Holding it at the pop = out. Last pup in wins.', tip: 'Got it? Bump someone!' },
+  acush: { ic: 'note', btn: 'move', ctl: 'move', goal: 'Sit on a cushion when the music stops.', press: 'Run! When the music stops, run onto a cushion.', push: 'Shove a sitter off its cushion (sitting: hop off).', score: 'No cushion when the timer ends = out.', tip: 'Music stops: grab a cushion!' },
+  atag: { ic: '💥', btn: 'move', ctl: 'move', goal: "Don't hold the toy when it pops.", press: 'Got the toy? Bump into a pup to pass it.', push: 'Shove the holder away. Holding it? A landed shove passes it.', score: 'Holding it at the pop = out. Last pup in wins.', tip: 'Got it? Bump someone!' },
   kotk: { ic: 'crown', btn: 'move', ctl: 'move', goal: 'Stand on the comfy bed on your own.', press: 'Run onto the bed. It moves every few seconds.', push: 'Shove pups off the bed.', score: 'Alone on the bed = points. Two on it = nobody scores.', tip: 'Alone on the bed = points!' },
-  paint: { ic: 'star', btn: 'move', ctl: 'move', goal: 'Paint the most lawn tiles your colour.', press: 'Run over tiles to paint them. Action = dash.', push: 'A shove that lands splats paint round the pup.', score: 'Most tiles when time runs out wins.', tip: 'Run over the tiles · Paint over theirs!' },
-  sink: { ic: 'swirl', btn: 'move', ctl: 'move', goal: 'Be the last pup still standing.', press: 'Keep moving: tiles drop after you step on them. Action = hop.', push: 'Shove a pup into a hole!', score: 'Fall through the bottom floor and you are out.', tip: 'Keep moving · Hop over holes!' },
-  snowball: { ic: 'ball', btn: 'move', ctl: 'move', goal: 'Be the last pup still in the snowball fight.', press: 'Hold Action to scoop a snowball, let go to throw it.', push: 'A shove knocks the ball out of their paws.', score: 'Three hits and you are out. Hide behind the snow walls!', tip: 'Hold to scoop · Let go to throw!' },
+  paint: { ic: 'star', btn: 'move', ctl: 'move', goal: 'Paint the most lawn tiles your colour.', press: 'Run over tiles to paint them.', act: 'Dash: a quick burst of speed (short cooldown).', aw: 'Dash', push: 'A shove that lands splats paint round the pup.', bw: 'Splat', score: 'Most tiles when time runs out wins.', tip: 'Run over the tiles · Paint over theirs!' },
+  sink: { ic: 'swirl', btn: 'move', ctl: 'move', goal: 'Be the last pup still standing.', press: 'Keep moving: tiles drop after you step on them.', act: 'Hop over a hole (a hop does not crack tiles).', aw: 'Hop', push: 'Shove a pup into a hole!', score: 'Fall through the bottom floor and you are out.', tip: 'Keep moving · Hop over holes!' },
+  snowball: { ic: 'ball', btn: 'move', ctl: 'move', goal: 'Be the last pup still in the snowball fight.', press: 'Run around and hide behind the snow walls.', act: 'Hold to scoop a snowball, let go to throw it.', aw: 'Throw', push: 'A shove knocks the ball out of their paws.', score: 'Three hits and you are out.', tip: 'Hold to scoop · Let go to throw!' },
 });
-MGCARD.cannon = { ic: '💥', btn: 'move', ctl: 'move', goal: 'Be the last pup still standing.', press: 'Dodge the cannonballs. Action = hop over a rolling ball.', push: 'Shove a pup into a cannonball!', score: 'Three hits and you are out. A red ring = a ball lands there, get out!', tip: 'Hop balls · Leave red rings!' };
+MGCARD.cannon = { ic: '💥', btn: 'move', ctl: 'move', goal: 'Be the last pup still standing.', press: 'Dodge the cannonballs. A red ring = a ball lands there!', act: 'Hop over a rolling ball.', aw: 'Hop', push: 'Shove a pup into a cannonball!', score: 'Three hits and you are out.', tip: 'Hop balls · Leave red rings!' };
 /* --- A9. Fetch Frenzy (new, FFA / teams, 2026-10-31): tennis balls drop onto a park lawn (a shadow + ring shows where,
    FFETCH.fall s before they land) from a seeded spawner that keeps FFETCH.NB balls on the field. Each pup has a basket
    in its colour on the rim (team rounds: one shared basket per team). Carry ONE ball at a time (held over the head,
@@ -9945,7 +10031,7 @@ MGDEF.ffetch = {
     if (s.t != null && C.DUR - s.t < 5 && s.t < C.DUR) T('Last few seconds!', W / 2, 112, 22, '#ff5c8a', 'center', { lw: 5 });
   },
 };
-MGCARD.ffetch = { ic: 'ball', btn: 'move', ctl: 'move', goal: 'Fetch the most balls into your basket.', press: 'Run over a ball to grab it, then carry it into your basket. Action = grab or toss.', push: 'Shove a carrier and the ball drops!', score: 'One ball at a time. Golden ball = 3. Most balls when time runs out wins.', tip: 'Grab a ball · Carry it home!' };
+MGCARD.ffetch = { ic: 'ball', btn: 'move', ctl: 'move', goal: 'Fetch the most balls into your basket.', press: 'Run over a ball to grab it, carry it into your basket.', act: 'Grab a ball nearby, or toss the one you carry.', aw: 'Grab', push: 'Shove a carrier and the ball drops!', score: 'One ball at a time. Golden ball = 3. Most balls when time runs out wins.', tip: 'Grab a ball · Carry it home!' };
 /* --- A10. Ice Rink Curling (new, FFA / teams, 2026-10-31): CURL.ENDS ends on a long ice rink (runs along +x, left to
    right on screen). Each end every pup starts behind the start line in its own lane; the run-up zone (move freely,
    B = shove) ends at the release line. Action = belly-slide launch (speed = run speed, x CURL.perfK when pressed in
@@ -10406,7 +10492,7 @@ MGDEF.curl = {
     }
   },
 };
-MGCARD.curl = { ic: 'star', btn: 'move', ctl: 'move', goal: 'Most points after 3 ends on the ice.', press: 'Run up, Action = belly-slide. Steer, sweep or brake.', push: 'Shove in the run-up. Slide into pups to knock them off!', score: 'Button 4 · Rings 3 / 2 / 1 · Closest +1.', tip: 'Slide onto the target · Knock the others off!' };
+MGCARD.curl = { ic: 'star', btn: 'move', ctl: 'move', goal: 'Most points after 3 ends on the ice.', press: 'Run up. Sliding: up / down steer, right sweeps, left brakes.', act: 'Belly-slide (best right at the line).', aw: 'Slide', push: 'Shove in the run-up. Slide into pups to knock them off!', score: 'Button 4 · Rings 3 / 2 / 1 · Closest +1.', tip: 'Slide onto the target · Knock the others off!' };
 /* --- A11. Giant Brawl (new, 1 vs Pack only, 2026-10-31): the lone pup is a GIANT (x GIANT.sc, slower, a big HP bar
    top-centre) in a round sand arena with a fence, bleachers and a crowd. Giant: move; Action = ground slam (GIANT.slamW
    wind-up: the giant crouches, a glowing ring shows the wave's reach and cracks spread, then a shockwave ring runs out
@@ -10904,7 +10990,7 @@ MGCARD.giant = { ic: 'crown', btn: 'move', ctl: 'move', goal: 'Pack: topple the 
 
 /* ===== Screens (DOM) ===== */
 function setScreen(name) {
-  SCREEN = name; PAUSED = false; QASK = false;
+  SCREEN = name; PAUSED = false; QASK = false; REBIND = -1; RBK = null;
   const el = $('#screen');
   el.classList.remove('on'); el.innerHTML = ''; el.dataset.s = name;
   renderChoice();
@@ -10952,7 +11038,7 @@ function navFocus(dx, dy) {
 }
 addEventListener('keydown', e => {
   const el = $('#screen');
-  if (!el.classList.contains('on') || REBIND >= 0 || (e.target && e.target.tagName === 'INPUT') || NET.mode === 'client' && !PAUSED && SCREEN !== 'online') return;
+  if (!el.classList.contains('on') || REBIND >= 0 || RBK || (e.target && e.target.tagName === 'INPUT') || NET.mode === 'client' && !PAUSED && SCREEN !== 'online') return;
   const D = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.code];
   if (D) { e.preventDefault(); e.stopImmediatePropagation(); navFocus(...D); return; }
   const a = document.activeElement;
@@ -10984,9 +11070,11 @@ function renderSetup() {
   const foc = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.do; // keep keyboard focus across re-renders
   const act = CFG.mode === 'action';
   const rows = CFG.slots.map((s, i) => {
-    const ks = KEYSETS[s.kset] || KEYSETS[0];
-    const dev = s.dev !== 'key' ? `🎮 Pad ${+s.dev[3] + 1}` : act ? `⌨️ <kbd>${ks.name}</kbd> <kbd>${keyName(ks.a)}</kbd><kbd>${keyName(ks.b)}</kbd>` : REBIND === i ? '⌨️ Press a key…' : `⌨️ <kbd>${keyName(s.key)}</kbd>`;
-    const ctl = s.type === 'human' ? `<button class="btn ghost${REBIND === i ? ' sel' : ''}" data-do="${act && s.dev === 'key' ? 'skset' : 'skey'}:${i}" aria-label="${act ? `change P${i + 1}'s keys` : `rebind P${i + 1}'s button`}">${dev}</button><button class="btn ghost" data-do="sdev:${i}" aria-label="switch input">⇄ ${s.dev === 'key' ? 'Pad' : s.dev === 'pad3' ? 'Key' : 'Next'}</button>`
+    // Action keys: the button cycles the presets (and "My keys" once set), ✎ sets all six one by one (RBK)
+    const ks = slotKS(s), rb = RBK && RBK.i === i, akey = act && s.dev === 'key';
+    const dev = s.dev !== 'key' ? `🎮 Pad ${+s.dev[3] + 1}` : rb ? `⌨️ Press <b>${KS_WORD[KS_DIRS[RBK.step]]}</b> ${RBK.step + 1}/6 <small>(key or click · Esc)</small>`
+      : act ? `⌨️ <kbd>${moveName(ks)}</kbd> <kbd>${keyName(ks.a)}</kbd><kbd>${keyName(ks.b)}</kbd>` : REBIND === i ? '⌨️ Press a key or click…' : `⌨️ <kbd>${keyName(s.key)}</kbd>`;
+    const ctl = s.type === 'human' ? `<button class="btn ghost${REBIND === i || rb ? ' sel' : ''}" data-do="${akey ? 'skset' : 'skey'}:${i}" aria-label="${act ? `switch P${i + 1}'s key set` : `rebind P${i + 1}'s button`}">${dev}</button>${akey ? `<button class="btn ghost" data-do="srebind:${i}" aria-label="set P${i + 1}'s own keys" title="Set your own keys">✎</button>` : ''}<button class="btn ghost" data-do="sdev:${i}" aria-label="switch input">⇄ ${s.dev === 'key' ? 'Pad' : s.dev === 'pad3' ? 'Key' : 'Next'}</button>${rb && RBK.err ? `<span class="note">⚠️ ${RBK.err}</span>` : ''}`
       : s.type === 'online' ? `<span class="note">${s.peer ? `🌐 ${s.name || 'Friend'}` : '⏳ Waiting for a friend (CPU if empty)'}</span>`
       : s.type === 'cpu' ? '<span class="note">🤖 The computer plays this pup</span>' : '<span class="note">Press ＋ Join to add this pup</span>';
     return `<div class="slot${s.type === 'off' ? ' off' : ''}" data-c="${SLOT_COL[i]}">
@@ -11006,7 +11094,7 @@ function renderSetup() {
       ${mapSeg()}<span class="seg">⏩ CPU speed ${[[false, 'Normal'], [true, 'Fast']].map(([f, l]) => `<button class="btn${!!CFG.fast === f ? ' sel' : ' ghost'}" data-do="cpufast:${f ? 1 : 0}">${l}</button>`).join('')}</span></div>
     <div class="foot"><button class="btn ghost" data-do="go:title">‹ Back</button><button class="btn ghost" data-do="go:help">📖 How to play</button>
       <button class="btn go big" data-do="start"${nOn < 2 ? ' disabled' : ''}>🎲 Let's party!</button></div>
-    <div class="small center">${nOn < 2 ? 'A party needs at least 2 pups. ' : ''}${act ? '🏃 Action: run + shove games mixed with one-button games. Click the keys to switch sets (WASD + F G · arrows + K L · numpad). Gamepads: press A to join (stick, A = action, B = push).'
+    <div class="small center">${nOn < 2 ? 'A party needs at least 2 pups. ' : ''}${act ? '🏃 Action: run + shove games mixed with one-button games. Click the keys to switch sets (WASD + left / right click · arrows + R-Shift / R-Ctrl · numpad), or ✎ to set your own. Gamepads: press A to join (stick, A = action, B = push).'
       : '🔘 Simple: every game is one button (phones, touch). Click a key to change it. Gamepads: press A to join, or pick the pad with ⇄.'}</div></div>`;
   applyStyles();
   const back = foc && $(`#screen [data-do="${foc}"]`);
@@ -11030,7 +11118,7 @@ function helpHTML(inPause) {
   return `<div class="card help"><div class="hd"><h2>How to play</h2><span class="sub">Most Golden Bones wins</span></div>
   <div class="hgrid">
     <section><h4>🏆 The goal</h4><p>Hop around the island, collect <b>treats</b> 🍪 and turn them into <b>Golden Bones</b> 🦴.</p><p>Pass the glowing bone with enough treats to buy it: 15 at first, 5 more after every bone bought (up to 30), cheaper if you're behind. Most bones after the last round wins; treats break ties.</p></section>
-    <section><h4>🔘 One button each</h4><p>Every pup plays with <b>one button</b>: a key, a gamepad button or a touch pad.</p><ul><li><b>Press</b>: roll, jump, get ready</li><li><b>Tap</b>: next option in a menu</li><li><b>Hold</b>: pick that option</li><li><kbd>Space</kbd> <kbd>Enter</kbd>, arrows and clicks also work for whoever's turn it is.</li></ul><p><b>🏃 Action mode</b> (setup): some minigames are run-and-shove games. Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (<kbd>F</kbd> action, <kbd>G</kbd> push), the arrows (<kbd>K</kbd> <kbd>L</kbd>), the numpad, a gamepad stick (A / B) or the touch stick.</p></section>
+    <section><h4>🔘 One button each</h4><p>Every pup plays with <b>one button</b>: a key, a gamepad button or a touch pad.</p><ul><li><b>Press</b>: roll, jump, get ready</li><li><b>Tap</b>: next option in a menu</li><li><b>Hold</b>: pick that option</li><li><kbd>Space</kbd> <kbd>Enter</kbd>, arrows and clicks also work for whoever's turn it is.</li></ul><p><b>🏃 Action mode</b> (setup): some minigames are run-and-shove games. Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (<kbd>Left click</kbd> action, <kbd>Right click</kbd> push), the arrows (<kbd>R-Shift</kbd> <kbd>R-Ctrl</kbd>), the numpad, a gamepad stick (A / B) or the touch stick. Set your own keys in setup with ✎. Every game's card shows what each button does.</p></section>
     <section><h4>🎲 Your turn</h4><ol><li>Use an item, if you have one.</li><li>Press your button to stop the die (1–10).</li><li>At a fork, pick a path: tap to switch, hold to go.</li><li>The space you land on does its thing.</li></ol><p>After everyone's turn, the round ends with a minigame.</p></section>
     <section><h4>🏠 Kennels</h4><p>Land on a free kennel to buy it. Anyone who lands there later pays you rent. Every floor doubles the rent and a whole street doubles it again. Add floors by landing on your own kennel or at the Pup Shop (up to 2).</p></section>
     <section><h4>🎮 Minigames</h4><p>Places pay 12 / 8 / 5 / 3 / 2 / 1 treats. Each game starts with a card showing the goal and your button.</p><p>With 4+ pups, the space you end on picks your team: ☀️ Sunny or ⛈️ Stormy.</p></section>
@@ -11051,7 +11139,7 @@ function playHTML() {
   return `<div class="card play"><div class="hd"><h2>Minigame playground</h2><span class="sub">${nOn} pups · Try any game</span></div>
     <div class="sopts center">${modeSeg()}</div>
     <div class="mgs">${Object.entries(MGDEF).filter(([id]) => mgInMode(id, CFG.mode)).map(([id, d]) => { const c = MGCARD[id]; return `<div class="mg"><div class="mgh"><h4>${d.name}</h4><button class="btn" data-do="mg:${id}"${nOn < 2 ? ' disabled' : ''} aria-label="play ${d.name}">▶ Play</button></div>
-      <span class="k${d.only ? ' ' + d.only : ''}">${d.kind}</span><div>${c ? `${c.goal} <b class="bw">${BTN_WORD[c.btn]}:</b> ${c.press}${c.push ? ` <b class="bw">Push:</b> ${c.push}` : ''}` : d.how}</div></div>`; }).join('')}</div>
+      <span class="k${d.only ? ' ' + d.only : ''}">${d.kind}</span><div>${c ? `${c.goal} <b class="bw">${BTN_WORD[c.btn]}:</b> ${c.press}${c.act ? ` <b class="bw">Action:</b> ${c.act}` : ''}${c.push ? ` <b class="bw">Push:</b> ${c.push}` : ''}` : d.how}</div></div>`; }).join('')}</div>
     <div class="foot"><button class="btn pri" data-do="go:title">‹ Back</button><button class="btn ghost" data-do="go:setup">🐶 Players (${nOn})…</button></div></div>`;
 }
 function resultsHTML() {
@@ -11117,7 +11205,8 @@ const ACT = {
   spup: (i, d) => { cyclePup(+i, +d); saveCfg(); renderSetup(); },
   skey: i => { REBIND = +i; renderSetup(); },
   sdev: i => { const s = CFG.slots[i], seq = ['key', 'pad0', 'pad1', 'pad2', 'pad3']; s.dev = seq[(seq.indexOf(s.dev) + 1) % seq.length]; saveCfg(); renderSetup(); },
-  skset: i => { const s = CFG.slots[i]; s.kset = (s.kset + 1) % KEYSETS.length; saveCfg(); renderSetup(); },
+  skset: i => { const s = CFG.slots[i]; s.kset = (s.kset + 1) % (s.keys ? 4 : KEYSETS.length); saveCfg(); renderSetup(); },
+  srebind: i => { REBIND = -1; RBK = { i: +i, step: 0, keys: {}, err: '' }; renderSetup(); },
   smap: k => { CFG.map = MAPS[k] ? k : 'classic'; saveCfg(); setMap(CFG.map); renderSetup(); },
   smode: k => { CFG.mode = k === 'action' ? 'action' : 'simple'; saveCfg(); if (SCREEN === 'play') setScreen('play'); else renderSetup(); },
   rounds: r => { CFG.rounds = +r; saveCfg(); renderSetup(); },
@@ -11521,8 +11610,10 @@ function netClientTick(dt) {
   if (NET.tr && NET.tr.tick) NET.tr.tick(dt);
   if (NET.status === 'Looking for the party…' && (NET.helloT += dt) > 6) return netLeave(false, `No party found with the code ${NET.code}.`);
   const key = CFG.slots[0].key;
-  // a guest is alone at its screen: WASD + F/G and arrows + K/L both work, plus the first gamepad and the touch stick
-  const ax = normAx(addAx(addAx(addAx(addAx({ mx: 0, my: 0, a: false, b: false }, keyAx(KEYSETS[0])), keyAx(KEYSETS[1])), padAx(navigator.getGamepads ? [...navigator.getGamepads()].findIndex(p => p) : -1)), touchAx(-1)));
+  // a guest is alone at its screen: its own keys (guestKS), else WASD + mouse and the arrows both work, plus the first
+  // gamepad and the touch stick
+  const gk = guestKS(), kx = gk ? keyAx(gk) : addAx(keyAx(KEYSETS[0]), keyAx(KEYSETS[1]));
+  const ax = normAx(addAx(addAx(addAx({ mx: 0, my: 0, a: false, b: false }, kx), padAx(navigator.getGamepads ? [...navigator.getGamepads()].findIndex(p => p) : -1)), touchAx(-1)));
   const d = !!((key && KD.has(key)) || NET.ptr || TD.has(-1) || padDown(0) || ax.a || ax.b);
   // one 'in' message when anything changes: axes rounded to 0.05, at most every 1/30 s unless a button changed
   const q = v => Math.round(v * 20) / 20, sig = [q(ax.mx), q(ax.my), +ax.a, +ax.b, +d].join();
