@@ -453,6 +453,9 @@ const keyName = c => !c ? '—' : c.replace(/^Key/, '').replace(/^Digit/, '').re
 let AC = null, AU = null;
 const MUS_LV = [0, .35, .65, 1], MUS_NM = ['Off', 'Low', 'Mid', 'High'];
 if (CFG.mus == null) CFG.mus = 2;
+// screen brightness (view only, this screen only): a multiplier in the grade pass (Render look)
+const BRIGHT_LV = [.8, .9, 1, 1.12], BRIGHT_NM = ['Dim', 'Soft', 'Normal', 'Bright'];
+if (!(CFG.bright >= 0 && CFG.bright < BRIGHT_LV.length)) CFG.bright = 2;
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 function auInit(ctx) {
   AC = ctx;
@@ -630,6 +633,7 @@ function musTick() {
 }
 // browsers start audio only from a user gesture: wake it on the first press while sound is on
 ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => { if (CFG.sound) auOn(); }, { capture: true, passive: true }));
+const brightBtn = () => `<button class="btn ghost" data-do="bright">🔆 Brightness: ${BRIGHT_NM[CFG.bright]}</button>`;
 const soundBtns = () => `<button class="btn ghost" data-do="sound">${CFG.sound ? '🔊 Sound: On' : '🔇 Sound: Off'}</button>${CFG.sound ? `<button class="btn ghost" data-do="music">🎵 Music: ${MUS_NM[CFG.mus]}</button>` : ''}`;
 
 /* ===== Input =====
@@ -809,7 +813,9 @@ function drawBone2D(x, y, s = 1, col = '#ffd23f') {
   g.fillStyle = col; g.fill(p);
   g.restore();
 }
-function panel2D(x, y, w, h, r = 18, fill = 'rgba(255,250,242,.93)', stroke = INK, lw = 3) { rr(x, y, w, h, r); g.fillStyle = fill; g.fill(); if (stroke) { g.lineWidth = lw; g.strokeStyle = stroke; g.stroke(); } }
+// HUD panels are a warm cream, not near-white: big white boards glared on a dark room's screen (2026-11-04)
+const PANEL = '#f3eadb';
+function panel2D(x, y, w, h, r = 18, fill = 'rgba(243,234,219,.94)', stroke = INK, lw = 3) { rr(x, y, w, h, r); g.fillStyle = fill; g.fill(); if (stroke) { g.lineWidth = lw; g.strokeStyle = stroke; g.stroke(); } }
 function faceAt(pl, x, y, r) { ell(x, y, r + 3, r + 3, pl.col, INK, 2.5); g.drawImage(FACE[pl.pup], x - r, y - r, r * 2, r * 2); }
 
 /* ===== Icon library: drawn toy-style icons (thick ink outline, one palette) instead of emoji-as-art =====
@@ -1189,10 +1195,12 @@ function M(geo, col, x = 0, y = 0, z = 0, parent = null, sx = 1, sy = sx, sz = s
   if (parent) parent.add(m);
   return m;
 }
+// light levels: a sunlit top face gets hemi + sun + fill ≈ 1.0 x its colour (was ≈ 1.45: pastel floors, snow and grass
+// clipped to white, "too bright, hurts my eyes", 2026-11-04). Shadowed tops keep ≈ .55 so shading still reads.
 function lights(scene, size = 26, sky = 0xffffff, ground = 0x88aa77) {
-  scene.add(new THREE.HemisphereLight(sky, ground, .56));
-  const fill = new THREE.DirectionalLight('#bcd2ff', .17); fill.position.set(-14, 9, -12); scene.add(fill); /* render look: cool fill */
-  const d = new THREE.DirectionalLight('#fff2df', .74);
+  scene.add(new THREE.HemisphereLight(sky, ground, .44));
+  const fill = new THREE.DirectionalLight('#bcd2ff', .12); fill.position.set(-14, 9, -12); scene.add(fill); /* render look: cool fill */
+  const d = new THREE.DirectionalLight('#fff2df', .48);
   d.position.set(12, 26, 14); d.castShadow = true;
   d.shadow.mapSize.set(2048, 2048);
   Object.assign(d.shadow.camera, { left: -size, right: size, top: size, bottom: -size, near: 1, far: 90 });
@@ -2536,8 +2544,8 @@ function mapSnowSky(s) {
   const hor = new THREE.Color('#e4eef8'), top = new THREE.Color('#86b3e2');
   s.fog.color.copy(hor); if (s.background && s.background.isColor) s.background.copy(hor);
   s.children.forEach(o => {
-    if (o.isHemisphereLight) { o.color.set('#eaf2ff'); o.groundColor.set('#b9c6d8'); o.intensity = .68; }
-    else if (o.isDirectionalLight) { o.color.set('#f4f6ff'); o.intensity = .74; }
+    if (o.isHemisphereLight) { o.color.set('#eaf2ff'); o.groundColor.set('#b9c6d8'); o.intensity = .52; }
+    else if (o.isDirectionalLight) { o.color.set('#f4f6ff'); o.intensity = .48; }
     else if (o.isMesh && o.geometry.parameters && o.geometry.parameters.radius === 230) { const P = o.geometry.attributes.position, C = o.geometry.attributes.color; for (let i = 0; i < P.count; i++) { const c = hor.clone().lerp(top, Math.pow(clamp(P.getY(i) / 230, 0, 1), .55)); C.setXYZ(i, c.r, c.g, c.b); } C.needsUpdate = true; }
     else if (o.isMesh && o.geometry.parameters && o.geometry.parameters.width === 600 && !o.material.transparent) o.material = mat('#4a9ad4');
   });
@@ -2765,8 +2773,8 @@ function buildBoard3D() {
   s.fog = new THREE.Fog('#cdeeff', 75 * MAPB.k, 160 * MAPB.k);
   BS.cam = newCam(42);
   // warm sun + soft sky fill (board only; the minigames keep lights())
-  s.add(new THREE.HemisphereLight('#e4f4ff', '#8bb873', .64));
-  const sun = new THREE.DirectionalLight('#fff3e0', .76); sun.position.set(14, 30, 18); sun.castShadow = true;
+  s.add(new THREE.HemisphereLight('#e4f4ff', '#8bb873', .52)); /* lit top ≈ 1.0 x colour, see lights() */
+  const sun = new THREE.DirectionalLight('#fff3e0', .5); sun.position.set(14, 30, 18); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -29, right: 29, top: 29, bottom: -29, near: 1, far: 90 }); sun.shadow.bias = -.0006; s.add(sun);
   if (!CL) { const h = Math.max(29, MAPB.x1 - MAPB.cx + 9, MAPB.z1 - MAPB.cz + 9); Object.assign(sun.shadow.camera, { left: -h, right: h, top: h, bottom: -h }); }
   const A = BS.anim = { balloons: [], bubbles: [], steam: [], birds: [], flies: [], fish: [] };
@@ -4610,7 +4618,7 @@ function drawCards() {
     // frame: drop shadow, cream body with a soft fade, ink (or own colour on your turn) rim
     rr(x + 2, y + 5, cw, 114, 18); g.fillStyle = 'rgba(59,42,69,.28)'; g.fill();
     if (me) { rr(x - 4, y - 4, cw + 8, 122, 22); g.fillStyle = p.col; g.globalAlpha = .35 + Math.sin(NOW * 5) * .12; g.fill(); g.globalAlpha = 1; }
-    const bg = g.createLinearGradient(0, y, 0, y + 114); bg.addColorStop(0, me ? '#ffffff' : '#fffcf6'); bg.addColorStop(1, me ? '#fff4e4' : '#f6eadb');
+    const bg = g.createLinearGradient(0, y, 0, y + 114); bg.addColorStop(0, me ? '#fbf3e6' : '#f4ebdd'); bg.addColorStop(1, me ? '#f4e6d0' : '#eaddc8');
     panel2D(x, y, cw, 114, 18, bg, me ? p.col : INK, me ? 5 : 3);
     // name plate in the pup's colour, with the button label in a little chip
     const bl = btnLabel(p); g.font = `700 12px ${FONT}`; const bw = g.measureText(bl).width + 12;
@@ -4664,7 +4672,7 @@ function hudBoardExtras() {
   const w = B.wheel;
   if (w) {
     const pl = PL[w.who], R = w.reels.length, rw = R === 1 ? 420 : 250, pw = R * rw + (R - 1) * 16 + 60, px = W / 2 - pw / 2, py = 170;
-    panel2D(px, py, pw, 230, 30, '#fffaf2', INK, 5);
+    panel2D(px, py, pw, 230, 30, PANEL, INK, 5);
     T(w.title, W / 2, py + 36, 30, '#ff5c8a', 'center', { lw: 5 });
     w.reels.forEach((r, j) => {
       const x = px + 30 + j * (rw + 16), cur = j === w.k;
@@ -4678,7 +4686,7 @@ function hudBoardExtras() {
   const f = B.fight;
   if (f) {
     const vic = PL[f.v], th = PL[f.th], left = clamp(2.8 - B.t, 0, 2), go = B.t >= .8 && B.t < 2.8;
-    panel2D(W / 2 - 280, 150, 560, 220, 30, '#fffaf2', INK, 5);
+    panel2D(W / 2 - 280, 150, 560, 220, 30, PANEL, INK, 5);
     T(`🦝 ${th.name}'s bandit vs ${vic.name}`, W / 2, 186, 26, '#ff5c8a', 'center', { lw: 5 });
     faceAt(vic, W / 2 - 170, 270, 40);
     T(go ? (vic.cpu ? 'Struggling…' : `Mash ${btnLabel(vic)}!`) : B.t < .8 ? 'Get ready…' : 'Time!', W / 2 + 50, 236, 30, go ? '#ff5c8a' : '#8a7a90', 'center', { lw: 5, stroke: go });
@@ -4690,7 +4698,7 @@ function hudBoardExtras() {
   if (B.race && B.phase !== 'final') {
     const who = r => !r.lead.length ? 'Nobody yet' : r.lead.map(i => PL[i].name).join(' & ');
     if (B.raceShow) {
-      panel2D(W / 2 - 330, 80, 660, 330, 30, '#fffaf2', INK, 5);
+      panel2D(W / 2 - 330, 80, 660, 330, 30, PANEL, INK, 5);
       T('🏅 Bonus bone race', W / 2, 118, 32, '#ff8a1f', 'center', { lw: 5 });
       T(`Decided after this last round · A sole leader gets +1 🦴 (one per pup) · A tie gives +${AWARD_TIE} 🍪 each`, W / 2, 152, 16, '#8a7a90', 'center', { stroke: false, w: 600 });
       B.race.forEach((r, j) => {
@@ -4709,7 +4717,7 @@ function hudBoardExtras() {
   }
   if (B.standings) {
     const order = leaderOrder(), place = rankScores(order.map(p => p.bones * 1000 + p.treats)), h = 80 + order.length * 50;
-    panel2D(W / 2 - 250, 70, 500, h, 30, '#fffaf2', INK, 5);
+    panel2D(W / 2 - 250, 70, 500, h, 30, PANEL, INK, 5);
     T('🔥 Standings', W / 2, 106, 30, '#ff7a3d', 'center', { lw: 5 });
     order.forEach((p, j) => { const y = 150 + j * 50; T(ORD[place[j]], W / 2 - 190, y, 24, j === 0 ? '#ffd23f' : '#fff', 'center', { lw: 4 }); faceAt(p, W / 2 - 130, y, 19); T(p.name, W / 2 - 100, y, 22, INK, 'left', { stroke: false }); T(`🦴${p.bones}  🍪${p.treats}`, W / 2 + 220, y, 20, INK, 'right', { stroke: false }); });
   }
@@ -4948,7 +4956,7 @@ function juBannerDraw(bn) {
   g.font = cfont(44); const w = Math.max(420, g.measureText(bn.text).width + 80);
   g.font = `500 21px ${FONT}`; const w2 = Math.max(w, g.measureText(bn.sub).width + 60), h = bn.sub ? 120 : 92;
   rr(-w2 / 2 + 6, -52, w2, h, 30); g.fillStyle = 'rgba(59,42,69,.28)'; g.fill();
-  rr(-w2 / 2, -58, w2, h, 30); g.fillStyle = '#fffaf2'; g.fill(); g.lineWidth = 5; g.strokeStyle = INK; g.stroke();
+  rr(-w2 / 2, -58, w2, h, 30); g.fillStyle = PANEL; g.fill(); g.lineWidth = 5; g.strokeStyle = INK; g.stroke();
   const sh = (bn.t - .25) / .5;
   if (sh > 0 && sh < 1) { g.save(); rr(-w2 / 2, -58, w2, h, 30); g.clip(); const sx = -w2 / 2 - 80 + sh * (w2 + 160); g.fillStyle = 'rgba(255,255,255,.75)'; g.beginPath(); g.moveTo(sx, -58); g.lineTo(sx + 40, -58); g.lineTo(sx + 10, -58 + h); g.lineTo(sx - 30, -58 + h); g.fill(); g.restore(); }
   const ts = 1 + wob(Math.max(0, bn.t - .1), 18, 6) * .08 * (bn.t > .1 ? 1 : 0);
@@ -5048,7 +5056,7 @@ function hudMG() {
     g.fillStyle = 'rgba(42,31,61,.5)'; g.fillRect(0, 0, W, H);
     const r = m.st.rank, order = m.ps.map((p, k) => k).sort((a, b) => r[a] - r[b]);
     const h = 70 + order.length * 64, tm = m.st.teams, rew = mgRewards(m);
-    panel2D(390, H / 2 - h / 2, 500, h, 30, '#fffaf2', INK, 5);
+    panel2D(390, H / 2 - h / 2, 500, h, 30, PANEL, INK, 5);
     if (tm) {
       const w = m.st.win, txt = w < 0 ? "It's a tie!" : `${m.opts.tname[w]} wins!`;
       T(txt, W / 2, H / 2 - h / 2 + 38, 34, w < 0 ? '#ff5c8a' : m.opts.tcol[w], 'center', { lw: 6 });
@@ -7154,7 +7162,7 @@ function mgIntroCard(m) {
   g.fillStyle = 'rgba(42,31,61,.55)'; g.fillRect(0, 0, W, H);
   const pop = easeBack(Math.min(1, m.t / .35));
   g.save(); g.translate(W / 2, H / 2); g.scale(.85 + .15 * pop, .85 + .15 * pop); g.globalAlpha = Math.min(1, m.t / .2); g.translate(-W / 2, -H / 2);
-  panel2D(196, 62, 888, 556, 34, '#fffaf2', INK, 5);
+  panel2D(196, 62, 888, 556, 34, PANEL, INK, 5);
   const tm = m.st.teams, tag = m.opts.duel ? '⚔️ Duel ⚔️' : tm && m.opts.mode === 'pack' ? '🐺 1 vs Pack 🐾' : tm ? '☀️ Team round ⛈️' : '';
   if (tag) { g.font = cfont(20); const tw = g.measureText(tag).width + 60; rr(W / 2 - tw / 2, 44, tw, 36, 18); g.fillStyle = m.opts.duel ? '#ff8a1f' : m.opts.mode === 'pack' ? '#ff5c8a' : '#3fa7ff'; g.fill(); g.lineWidth = 3; g.strokeStyle = INK; g.stroke(); T(tag, W / 2, 62, 20, '#fff', 'center', { lw: 4 }); }
   T(m.def.name, W / 2, 118, 54, '#ff5c8a', 'center', { lw: 8 });
@@ -10042,7 +10050,7 @@ MGDEF.curl = {
     const x0 = C.xMin - .1, x1 = C.xB + .1, Lx = x1 - x0, Lz = 2 * Wz + .2, z0 = -Wz - .1, CW = 2048, CH = 1024, sx = CW / Lx, sz = CH / Lz;
     const cv = document.createElement('canvas'); cv.width = CW; cv.height = CH; const c = cv.getContext('2d');
     const X = x => (x - x0) * sx, Z = z => (z - z0) * sz;
-    const gr = c.createLinearGradient(0, 0, 0, CH); gr.addColorStop(0, '#dcebf7'); gr.addColorStop(.5, '#eef6fc'); gr.addColorStop(1, '#e2eef8'); c.fillStyle = gr; c.fillRect(0, 0, CW, CH);
+    const gr = c.createLinearGradient(0, 0, 0, CH); gr.addColorStop(0, '#d0e1f0'); gr.addColorStop(.5, '#e0ecf6'); gr.addColorStop(1, '#d6e5f2'); /* a step under white: no glare */ c.fillStyle = gr; c.fillRect(0, 0, CW, CH);
     let sd = 41; const r01 = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
     c.strokeStyle = 'rgba(150,185,220,.22)'; c.lineWidth = 2;
     for (let i = 0; i < 140; i++) { const x = r01() * CW, y = r01() * CH, a = (r01() - .5) * .5, l = 30 + r01() * 120; c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); c.stroke(); }
@@ -10816,7 +10824,7 @@ function titleHTML() {
     <button class="btn pri big" data-do="go:setup">🎉 Start a party</button>
     <div class="two"><button class="btn ghost" data-do="go:help">📖 How to play</button><button class="btn ghost" data-do="go:play">🎮 Minigames</button></div>
     ${NET.on ? `<button class="btn ghost" data-do="go:online">🌐 Online party${SB_ON ? '' : ' (preview)'}</button>` : ''}
-    ${soundBtns()}
+    ${soundBtns()}${brightBtn()}
   </div>
   <div class="tfoot">Every player needs just <b>one button</b>: a key, a gamepad button or a touch pad.</div></div>`;
 }
@@ -10931,6 +10939,7 @@ function pauseHTML() {
       : `<button class="btn pri" data-do="resume">▶ Resume</button>
       <button class="btn ghost" data-do="phelp">📖 How to play and controls</button>
       <div class="two">${soundBtns()}<button class="btn ghost" data-do="pfast">⏩ CPU speed: ${CFG.fast ? 'Fast' : 'Normal'}</button></div>
+      ${brightBtn()}
       <button class="btn ghost" data-do="pask:1">🏠 Quit to title</button>`}</div>
     <div class="small">Press <kbd>Esc</kbd> to resume</div></div>`;
 }
@@ -10950,6 +10959,7 @@ const ACT = {
   go: a => setScreen(a),
   sound: () => { CFG.sound = !CFG.sound; saveCfg(); if (CFG.sound && auOn()) sfx('pick'); if (PAUSED) { PAUSED = false; togglePause(); } else setScreen(SCREEN); },
   music: () => { CFG.mus = (CFG.mus + 1) % MUS_LV.length; saveCfg(); sfx('tap'); if (PAUSED) { PAUSED = false; togglePause(); } else setScreen(SCREEN); },
+  bright: () => { CFG.bright = (CFG.bright + 1) % BRIGHT_LV.length; saveCfg(); sfx('tap'); if (PAUSED) { PAUSED = false; togglePause(); } else setScreen(SCREEN); },
   stype: i => {
     const s = CFG.slots[i];
     if (s.peer) { netSend({ t: 'full', why: 'The host gave your seat to someone else.' }, s.peer); delete s.peer; s.name = ''; }
@@ -11568,7 +11578,7 @@ buildBoard3D = function () {
   _buildBoard3D();
   const s = BS.scene;
   s.children.forEach(l => { if (l.isHemisphereLight) { l.intensity *= .9; l.color.lerp(new THREE.Color('#fff4e6'), .35); l.groundColor.lerp(new THREE.Color('#7f9fc8'), .25); } });
-  const fill = new THREE.DirectionalLight('#bcd2ff', .17); fill.position.set(-16, 10, -14); s.add(fill);
+  const fill = new THREE.DirectionalLight('#bcd2ff', .12); fill.position.set(-16, 10, -14); s.add(fill);
   if (BS.pillar) BS.pillar.traverse(n => { if (n.isMesh && n.material && !n.material.transparent) glowify(n.material, .75); });
 };
 // scan a scene for new meshes to ink / glow; cheap, runs every 20 frames per scene
@@ -11595,13 +11605,16 @@ function fxSetup() {
       c += (texture2D(tSrc, vUv + uD * 1.38).rgb + texture2D(tSrc, vUv - uD * 1.38).rgb) * .316;
       c += (texture2D(tSrc, vUv + uD * 3.23).rgb + texture2D(tSrc, vUv - uD * 3.23).rgb) * .07;
       gl_FragColor = vec4(c, 1.0); }`);
-  const fin = sm({ tMain: { value: null }, tBloom: { value: null }, uBloom: { value: 1.15 } }, `uniform sampler2D tMain, tBloom; uniform float uBloom; varying vec2 vUv;
+  // grade: brightness setting (uExp), slight contrast, then a soft shoulder above .74 so whites land at ≈ .91, never a
+  // full-white glare (snow, ice, pale plazas); warm highs / cool lows, vignette
+  const fin = sm({ tMain: { value: null }, tBloom: { value: null }, uBloom: { value: .9 }, uExp: { value: 1 } }, `uniform sampler2D tMain, tBloom; uniform float uBloom, uExp; varying vec2 vUv;
     void main() {
-      vec3 c = texture2D(tMain, vUv).rgb + texture2D(tBloom, vUv).rgb * uBloom;
+      vec3 c = (texture2D(tMain, vUv).rgb + texture2D(tBloom, vUv).rgb * uBloom) * uExp;
       float l = dot(c, vec3(.299, .587, .114));
-      c = mix(vec3(l), c, 1.04);
-      c = (c - .5) * 1.06 + .5;
-      c += vec3(.018, .008, -.016) * smoothstep(.5, 1.0, l) + vec3(-.012, -.004, .03) * (1.0 - smoothstep(.05, .5, l));
+      c = mix(vec3(l), c, 1.05);
+      c = (c - .45) * 1.05 + .45;
+      vec3 sh = .74 + .26 * (1.0 - exp(-(c - .74) / .26)); c = mix(c, sh, step(.74, c));
+      c += vec3(.014, .006, -.014) * smoothstep(.5, 1.0, l) + vec3(-.012, -.004, .03) * (1.0 - smoothstep(.05, .5, l));
       vec2 d = (vUv - .5) * vec2(1.15, 1.0); float v = smoothstep(.42, .95, length(d));
       c = mix(c, c * vec3(.80, .76, .86), v * .55);
       gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0); }`);
@@ -11619,6 +11632,8 @@ function fxRender(scene, cam) {
   }
   inkScan(scene);
   const post = FX.mode === 'high' || (FX.mode === 'auto' && FX.post);
+  const bf = post || BRIGHT_LV[CFG.bright] === 1 ? '' : 'brightness(' + BRIGHT_LV[CFG.bright] + ')'; /* no grade pass: the setting as a CSS filter */
+  if (FX.bf !== bf) { FX.bf = bf; renderer.domElement.style.filter = bf; }
   if (!post) { renderer.setRenderTarget(null); renderer.render(scene, cam); FX.calls = renderer.info.render.calls; return; }
   if (!FX.R) fxSetup();
   const R = FX.R;
@@ -11626,7 +11641,7 @@ function fxRender(scene, cam) {
   R.bright.uniforms.tMain.value = R.main.texture; fxPass(R.bright, R.bA);
   R.blur.uniforms.tSrc.value = R.bA.texture; R.blur.uniforms.uD.value.set(1.6 / R.bw, 0); fxPass(R.blur, R.bB);
   R.blur.uniforms.tSrc.value = R.bB.texture; R.blur.uniforms.uD.value.set(0, 1.6 / R.bh); fxPass(R.blur, R.bA);
-  R.fin.uniforms.tMain.value = R.main.texture; R.fin.uniforms.tBloom.value = R.bA.texture; fxPass(R.fin, null);
+  R.fin.uniforms.tMain.value = R.main.texture; R.fin.uniforms.tBloom.value = R.bA.texture; R.fin.uniforms.uExp.value = BRIGHT_LV[CFG.bright]; fxPass(R.fin, null);
 }
 window.__inkInfo = () => ({ calls: FX.calls, post: FX.mode === 'high' || (FX.mode === 'auto' && FX.post), mode: FX.mode });
 
