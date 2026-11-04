@@ -1640,6 +1640,18 @@ function smoothClip(c) {
   });
   return new THREE.AnimationClip(c.name, c.duration, tracks);
 }
+/* Painted faces (eyes, nose, mouth) are a thin alpha-tested decal mesh just in front of the head. Bending the head or
+   opening the jaw (look up, jump, cheer, dance) pushed the muzzle through the decal's lowest part, so Schiffy's nose
+   vanished (user, 2026-11-04). The decal is drawn DOG_DECAL closer to the camera along its own view ray: depth only, so
+   it stays in the same place on screen (the ink shells use the same trick the other way). */
+const DOG_DECAL = .07;
+function dogDecal(m) {
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>',
+      `#include <project_vertex>\n  mvPosition.xyz -= normalize(mvPosition.xyz) * ${DOG_DECAL.toFixed(3)};\n  gl_Position = projectionMatrix * mvPosition;`);
+  };
+  m.customProgramCacheKey = () => 'dogDecal';
+}
 function dogify(root) {
   const u = root.userData, rig = u.rig, DG = DOGS[u.did || 'schiffy'], FT = DOG_FIT[u.did] || DOG_FIT.schiffy;
   if (!DG || u.dog) return;
@@ -1650,8 +1662,10 @@ function dogify(root) {
     const src = n.material;
     if (!DOG_MATS.has(src)) {
       if (src.map) src.map.encoding = THREE.LinearEncoding; // the painted texture's colours as authored
-      DOG_MATS.set(src, new THREE.MeshToonMaterial({ color: 0xffffff, map: src.map || null, gradientMap: GRAD, alphaTest: src.alphaTest || 0,
-        transparent: !!src.transparent, side: src.side, skinning: !!n.isSkinnedMesh }));
+      const dm = new THREE.MeshToonMaterial({ color: 0xffffff, map: src.map || null, gradientMap: GRAD, alphaTest: src.alphaTest || 0,
+        transparent: !!src.transparent, side: src.side, skinning: !!n.isSkinnedMesh });
+      if (src.alphaTest > 0) dogDecal(dm);
+      DOG_MATS.set(src, dm);
     }
     n.material = DOG_MATS.get(src); n.castShadow = true; n.frustumCulled = false;
   });
@@ -11062,7 +11076,7 @@ function titleHTML() {
     ${NET.on ? `<button class="btn ghost" data-do="go:online">🌐 Online party${SB_ON ? '' : ' (preview)'}</button>` : ''}
     ${soundBtns()}${brightBtn()}
   </div>
-  <div class="tfoot">Every player needs just <b>one button</b>: a key, a gamepad button or a touch pad.</div></div>`;
+  <div class="tfoot">Play with keys, gamepads or touch. <b>Simple</b> mode: one button each · <b>Action</b> mode: run + shove games.</div></div>`;
 }
 function renderSetup() {
   if (NET.mode === 'host') netLobby();
@@ -11118,7 +11132,7 @@ function helpHTML(inPause) {
   return `<div class="card help"><div class="hd"><h2>How to play</h2><span class="sub">Most Golden Bones wins</span></div>
   <div class="hgrid">
     <section><h4>🏆 The goal</h4><p>Hop around the island, collect <b>treats</b> 🍪 and turn them into <b>Golden Bones</b> 🦴.</p><p>Pass the glowing bone with enough treats to buy it: 15 at first, 5 more after every bone bought (up to 30), cheaper if you're behind. Most bones after the last round wins; treats break ties.</p></section>
-    <section><h4>🔘 One button each</h4><p>Every pup plays with <b>one button</b>: a key, a gamepad button or a touch pad.</p><ul><li><b>Press</b>: roll, jump, get ready</li><li><b>Tap</b>: next option in a menu</li><li><b>Hold</b>: pick that option</li><li><kbd>Space</kbd> <kbd>Enter</kbd>, arrows and clicks also work for whoever's turn it is.</li></ul><p><b>🏃 Action mode</b> (setup): some minigames are run-and-shove games. Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (<kbd>Left click</kbd> action, <kbd>Right click</kbd> push), the arrows (<kbd>R-Shift</kbd> <kbd>R-Ctrl</kbd>), the numpad, a gamepad stick (A / B) or the touch stick. Set your own keys in setup with ✎. Every game's card shows what each button does.</p></section>
+    <section><h4>🔘 Controls</h4><p>The board and <b>Simple</b> mode games need just <b>one button</b> per pup: a key, a gamepad button or a touch pad.</p><ul><li><b>Press</b>: roll, jump, get ready</li><li><b>Tap</b>: next option in a menu</li><li><b>Hold</b>: pick that option</li><li><kbd>Space</kbd> <kbd>Enter</kbd>, arrows and clicks also work for whoever's turn it is.</li></ul><p><b>🏃 Action mode</b> (setup): some minigames are run-and-shove games. Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (<kbd>Left click</kbd> action, <kbd>Right click</kbd> push), the arrows (<kbd>R-Shift</kbd> <kbd>R-Ctrl</kbd>), the numpad, a gamepad stick (A / B) or the touch stick. Set your own keys in setup with ✎. Every game's card shows what each button does.</p></section>
     <section><h4>🎲 Your turn</h4><ol><li>Use an item, if you have one.</li><li>Press your button to stop the die (1–10).</li><li>At a fork, pick a path: tap to switch, hold to go.</li><li>The space you land on does its thing.</li></ol><p>After everyone's turn, the round ends with a minigame.</p></section>
     <section><h4>🏠 Kennels</h4><p>Land on a free kennel to buy it. Anyone who lands there later pays you rent. Every floor doubles the rent and a whole street doubles it again. Add floors by landing on your own kennel or at the Pup Shop (up to 2).</p></section>
     <section><h4>🎮 Minigames</h4><p>Places pay 12 / 8 / 5 / 3 / 2 / 1 treats. Each game starts with a card showing the goal and your button.</p><p>With 4+ pups, the space you end on picks your team: ☀️ Sunny or ⛈️ Stormy.</p></section>
@@ -11758,14 +11772,15 @@ bakeGroup = function (root, cells = null) {
 const RIM_MATS = new Map();
 function rimMat(m) {
   if (RIM_MATS.has(m)) return RIM_MATS.get(m);
-  const r = m.clone();
+  const r = m.clone(), prev = m.onBeforeCompile, pk = m.customProgramCacheKey.bind(m); /* keep the source's own shader hook (dog face decals) */
   r.onBeforeCompile = sh => {
+    prev.call(r, sh);
     sh.fragmentShader = sh.fragmentShader.replace('#include <tonemapping_fragment>', `{ float inkF = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
       float inkR = smoothstep(.56, .7, inkF) * clamp(.3 + normal.y * .9, 0.0, 1.0);
       gl_FragColor.rgb += (diffuseColor.rgb * .28 + vec3(.1, .085, .06)) * inkR; }
       #include <tonemapping_fragment>`);
   };
-  r.customProgramCacheKey = () => 'rim';
+  r.customProgramCacheKey = () => (m.onBeforeCompile === THREE.Material.prototype.onBeforeCompile ? '' : pk()) + 'rim';
   RIM_MATS.set(m, r); return r;
 }
 // glow mask: opaque materials write alpha = 1 - k; the post pass blooms colour x (1 - alpha)
